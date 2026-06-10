@@ -1,0 +1,182 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   FONT IMPORT
+   ============================================================ */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+/* ============================================================
+   BASE STYLES
+   ============================================================ */
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-gray-50 text-gray-900 antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+}
+
+/* ============================================================
+   COMPONENT CLASSES
+   ============================================================ */
+@layer components {
+  /* --- Buttons --- */
+  .btn-primary {
+    @apply bg-primary-600 hover:bg-primary-700 active:bg-primary-800
+           text-white font-semibold rounded-xl px-5 py-3
+           transition-all duration-150 cursor-pointer
+           disabled:opacity-50 disabled:cursor-not-allowed
+           touch-manipulation select-none;
+  }
+
+  .btn-secondary {
+    @apply bg-gray-100 hover:bg-gray-200 active:bg-gray-300
+           text-gray-700 font-semibold rounded-xl px-5 py-3
+           transition-all duration-150 cursor-pointer
+           disabled:opacity-50 disabled:cursor-not-allowed
+           touch-manipulation select-none;
+  }
+
+  .btn-danger {
+    @apply bg-red-600 hover:bg-red-700 active:bg-red-800
+           text-white font-semibold rounded-xl px-5 py-3
+           transition-all duration-150 cursor-pointer
+           disabled:opacity-50 disabled:cursor-not-allowed
+           touch-manipulation select-none;
+  }
+
+  /* --- Card --- */
+  .card {
+    @apply bg-white rounded-2xl p-5 shadow-sm border border-gray-100;
+  }
+
+  /* --- Input --- */
+  .input-field {
+    @apply w-full px-4 py-3 rounded-xl border-2 border-gray-200
+           focus:border-primary-500 focus:outline-none
+           bg-white text-gray-800 placeholder-gray-400
+           transition-colors duration-150;
+  }
+
+  /* --- Overlay/Modal backdrop --- */
+  .overlay {
+    @apply fixed inset-0 bg-black/50 backdrop-blur-sm
+           flex items-center justify-center z-50 px-4;
+  }
+
+  /* --- Soal number pills --- */
+  .soal-pill {
+    @apply w-9 h-9 rounded-xl text-sm font-semibold
+           flex items-center justify-center
+           transition-all duration-150 touch-manipulation;
+  }
+
+  .soal-pill-kosong {
+    @apply bg-gray-100 text-gray-500 hover:bg-gray-200;
+  }
+
+  .soal-pill-terjawab {
+    @apply bg-primary-100 text-primary-700 hover:bg-primary-200;
+  }
+
+  .soal-pill-aktif {
+    @apply bg-primary-600 text-white ring-2 ring-primary-400 ring-offset-1;
+  }
+
+  /* --- Badge --- */
+  .badge {
+    @apply inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium;
+  }
+
+  .badge-green {
+    @apply bg-green-100 text-green-700;
+  }
+
+  .badge-red {
+    @apply bg-red-100 text-red-700;
+  }
+
+  .badge-yellow {
+    @apply bg-yellow-100 text-yellow-700;
+  }
+
+  .badge-gray {
+    @apply bg-gray-100 text-gray-600;
+  }
+
+  .badge-blue {
+    @apply bg-blue-100 text-blue-700;
+  }
+}
+
+/* ============================================================
+   WATERMARK — NIM/Nama mahasiswa samar di background
+   ============================================================ */
+.watermark {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-30deg);
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.04);
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+  z-index: 0;
+  letter-spacing: 0.05em;
+}
+
+/* ============================================================
+   ANIMATIONS
+   ============================================================ */
+@layer utilities {
+  .animate-fade-in {
+    animation: fadeIn 0.2s ease-in-out;
+  }
+
+  .animate-slide-up {
+    animation: slideUp 0.3s ease-out;
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(16px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+/* ============================================================
+   SCROLLBAR (webkit)
+   ============================================================ */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
