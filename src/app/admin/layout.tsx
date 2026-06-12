@@ -13,8 +13,10 @@ interface AdminInfo {
 const navItems = [
   { href: '/admin/dashboard', label: 'Dashboard', icon: '📊' },
   { href: '/admin/ujian', label: 'Manajemen Ujian', icon: '📝' },
+  { href: '/admin/rekap', label: 'Rekap Nilai', icon: '📈' },
   { href: '/admin/mahasiswa', label: 'Data Mahasiswa', icon: '🎓' },
   { href: '/admin/dosen', label: 'Data Dosen', icon: '👨‍🏫' },
+  { href: '/admin/mata-kuliah', label: 'Mata Kuliah', icon: '📚' },
   { href: '/admin/import', label: 'Import Data', icon: '📥' },
 ]
 
