@@ -3,8 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { hapusSesiLokal } from '@/lib/utils'
-import { formatTanggalWaktu, hitungDurasiMenit, nilaiKeHuruf } from '@/lib/utils'
+import { hapusSesiLokal, nilaiKeHuruf } from '@/lib/utils'
 
 interface HasilUjian {
   nama: string
@@ -17,9 +16,27 @@ interface HasilUjian {
   durasi_menit: number
   jumlah_pelanggaran: number
   nilai_pg: number | null
-  nilai_esai: number | null
-  nilai_final: number | null
   ada_esai: boolean
+}
+
+function formatWaktu(iso: string): string {
+  if (!iso) return '-'
+  const d = new Date(iso)
+  return d.toLocaleString('id-ID', {
+    day: '2-digit', month: 'long', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+    timeZone: 'Asia/Jakarta',
+  })
+}
+
+function hitungDurasi(mulai: string, selesai: string): string {
+  if (!mulai || !selesai) return '-'
+  const ms = new Date(selesai).getTime() - new Date(mulai).getTime()
+  const totalMenit = Math.floor(ms / 60000)
+  const jam = Math.floor(totalMenit / 60)
+  const menit = totalMenit % 60
+  if (jam > 0) return `${jam} jam ${menit} menit`
+  return `${menit} menit`
 }
 
 export default function SelesaiPage() {
@@ -28,23 +45,15 @@ export default function SelesaiPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    loadHasil()
-    // Bersihkan semua session & local storage
+    const token = sessionStorage.getItem('sesi_token')
+    loadHasil(token)
     hapusSesiLokal()
     sessionStorage.clear()
   }, [])
 
-  async function loadHasil() {
+  async function loadHasil(token: string | null) {
+    if (!token) { setLoading(false); return }
     try {
-      // Data dari sessionStorage sebelum di-clear mungkin sudah hilang
-      // Ambil dari token yang mungkin masih ada, atau tampilkan ringkasan umum
-      const token = sessionStorage.getItem('sesi_token')
-
-      if (!token) {
-        setLoading(false)
-        return
-      }
-
       const { data: sesi } = await supabase
         .from('sesi_ujian')
         .select(`
@@ -59,10 +68,7 @@ export default function SelesaiPage() {
         .eq('token_sesi', token)
         .single()
 
-      if (!sesi) {
-        setLoading(false)
-        return
-      }
+      if (!sesi) { setLoading(false); return }
 
       const adaEsai = (sesi.ujian?.soal || []).some((s: any) => s.tipe === 'esai')
 
@@ -74,13 +80,9 @@ export default function SelesaiPage() {
         status: sesi.status,
         waktu_mulai: sesi.waktu_mulai || '',
         waktu_selesai: sesi.waktu_selesai || new Date().toISOString(),
-        durasi_menit: sesi.waktu_mulai && sesi.waktu_selesai
-          ? hitungDurasiMenit(sesi.waktu_mulai, sesi.waktu_selesai)
-          : 0,
+        durasi_menit: 0,
         jumlah_pelanggaran: sesi.jumlah_pelanggaran,
         nilai_pg: sesi.nilai_pg,
-        nilai_esai: sesi.nilai_esai,
-        nilai_final: sesi.nilai_final,
         ada_esai: adaEsai,
       })
     } catch (err) {
@@ -90,8 +92,6 @@ export default function SelesaiPage() {
     }
   }
 
-  const isAutoSubmit = hasil?.status === 'auto_submit'
-
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -100,27 +100,25 @@ export default function SelesaiPage() {
     )
   }
 
+  const isAutoSubmit = hasil?.status === 'auto_submit'
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-green-50 flex flex-col items-center justify-center px-4 py-10">
       <div className="w-full max-w-sm space-y-4 animate-slide-up">
 
-        {/* Status icon */}
+        {/* Status */}
         <div className="text-center">
           {isAutoSubmit ? (
             <>
               <div className="text-6xl mb-3">🔒</div>
               <h1 className="text-2xl font-bold text-gray-800">Ujian Diakhiri Sistem</h1>
-              <p className="text-gray-500 text-sm mt-1">
-                Ujian diakhiri otomatis karena batas pelanggaran tercapai.
-              </p>
+              <p className="text-gray-500 text-sm mt-1">Ujian diakhiri otomatis karena batas pelanggaran tercapai.</p>
             </>
           ) : (
             <>
               <div className="text-6xl mb-3">✅</div>
-              <h1 className="text-2xl font-bold text-gray-800">Ujian Selesai!</h1>
-              <p className="text-gray-500 text-sm mt-1">
-                Jawaban kamu berhasil dikumpulkan.
-              </p>
+              <h1 className="text-2xl font-bold text-gray-800">Jawaban Terkirim!</h1>
+              <p className="text-gray-500 text-sm mt-1">Jawaban kamu berhasil dikumpulkan.</p>
             </>
           )}
         </div>
@@ -143,18 +141,18 @@ export default function SelesaiPage() {
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">Mata Kuliah</span>
-              <span className="font-semibold text-gray-800 text-right max-w-[60%]">{hasil.nama_matkul}</span>
+              <span className="font-semibold text-gray-800 text-right max-w-[60%]">{hasil.nama_matkul || '-'}</span>
             </div>
             {hasil.waktu_selesai && (
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Selesai</span>
-                <span className="font-semibold text-gray-800">{formatTanggalWaktu(hasil.waktu_selesai)}</span>
+                <span className="text-gray-500">Waktu Kirim</span>
+                <span className="font-semibold text-gray-800 text-right">{formatWaktu(hasil.waktu_selesai)}</span>
               </div>
             )}
-            {hasil.durasi_menit > 0 && (
+            {hasil.waktu_mulai && hasil.waktu_selesai && (
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500">Durasi</span>
-                <span className="font-semibold text-gray-800">{hasil.durasi_menit} menit</span>
+                <span className="font-semibold text-gray-800">{hitungDurasi(hasil.waktu_mulai, hasil.waktu_selesai)}</span>
               </div>
             )}
             {hasil.jumlah_pelanggaran > 0 && (
@@ -166,37 +164,29 @@ export default function SelesaiPage() {
           </div>
         )}
 
-        {/* Nilai */}
+        {/* Nilai PG */}
         {hasil?.nilai_pg !== null && hasil?.nilai_pg !== undefined && (
           <div className="card text-center">
             <p className="text-xs text-gray-400 mb-1">Nilai Pilihan Ganda</p>
-            <p className="text-4xl font-bold text-primary-600">{hasil.nilai_pg.toFixed(1)}</p>
+            <p className="text-5xl font-bold text-primary-600">{Number(hasil.nilai_pg).toFixed(1)}</p>
             <p className="text-sm text-gray-400 mt-0.5">dari 100</p>
           </div>
         )}
 
+        {/* Info esai */}
         {hasil?.ada_esai && (
           <div className="card text-center bg-amber-50 border-amber-200">
             <p className="text-xs text-amber-600 font-medium mb-1">⏳ Soal Esai</p>
-            <p className="text-sm text-amber-700">
-              Soal esai akan dinilai oleh dosen. Nilai final akan diumumkan setelah penilaian selesai.
-            </p>
+            <p className="text-sm text-amber-700">Soal esai akan dinilai oleh dosen. Nilai final diumumkan setelah penilaian selesai.</p>
           </div>
         )}
 
-        {/* Pesan */}
         <div className="text-center text-xs text-gray-400 space-y-1">
-          <p>Simpan atau screenshot halaman ini sebagai bukti pengumpulan.</p>
-          <p>Hubungi dosen/admin jika ada pertanyaan tentang nilai.</p>
+          <p>Screenshot halaman ini sebagai bukti pengumpulan.</p>
+          <p>Hubungi dosen jika ada pertanyaan tentang nilai.</p>
         </div>
 
-        {/* Kembali ke beranda */}
-        <button
-          onClick={() => router.push('/')}
-          className="btn-secondary w-full"
-        >
-          ← Kembali ke Beranda
-        </button>
+        <button onClick={() => router.push('/')} className="btn-secondary w-full">← Kembali ke Beranda</button>
       </div>
     </div>
   )
