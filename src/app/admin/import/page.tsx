@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-type ImportType = 'mahasiswa' | 'dosen' | 'soal'
+type ImportType = 'mahasiswa' | 'dosen' | 'matkul' | 'soal'
 
 interface ImportResult {
   success: number
@@ -29,6 +29,14 @@ const TEMPLATES = {
     ],
     info: 'email bersifat opsional (boleh dikosongkan)',
   },
+  matkul: {
+    headers: ['kode_matkul', 'nama_matkul', 'kode_dosen', 'prodi', 'sks'],
+    contoh: [
+      ['AGT201', 'Teknologi Budidaya Kelapa Sawit', 'DSN001', 'agroteknologi', '3'],
+      ['AGB301', 'Manajemen Risiko Agribisnis', 'DSN002', 'agribisnis', '3'],
+    ],
+    info: 'kode_dosen harus sudah terdaftar di menu Dosen | prodi: agroteknologi/agribisnis | sks: angka 1-6',
+  },
   soal: {
     headers: ['ujian_id', 'nomor_urut', 'pertanyaan', 'tipe', 'opsi_a', 'opsi_b', 'opsi_c', 'opsi_d', 'kunci_jawaban', 'bobot_nilai'],
     contoh: [
@@ -37,6 +45,13 @@ const TEMPLATES = {
     ],
     info: 'tipe: pg/esai | kunci_jawaban: A/B/C/D (kosongkan untuk esai) | opsi_a-d: kosongkan untuk esai',
   },
+}
+
+const TAB_LABELS: Record<ImportType, string> = {
+  mahasiswa: '🎓 Mahasiswa',
+  dosen: '👨‍🏫 Dosen',
+  matkul: '📚 Mata Kuliah',
+  soal: '📝 Soal',
 }
 
 function downloadTemplate(type: ImportType) {
@@ -96,6 +111,13 @@ export default function ImportPage() {
 
       const res: ImportResult = { success: 0, failed: 0, errors: [] }
 
+      // Pre-load dosen map untuk import mata kuliah (kode_dosen -> id)
+      let dosenMap: Record<string, string> = {}
+      if (activeTab === 'matkul') {
+        const { data: dosenList } = await supabase.from('dosen').select('id, kode_dosen')
+        dosenList?.forEach(d => { dosenMap[d.kode_dosen.toUpperCase()] = d.id })
+      }
+
       for (let i = 0; i < dataRows.length; i++) {
         const row = dataRows[i]
         const rowNum = i + 2 // 1-indexed, skip header
@@ -124,6 +146,24 @@ export default function ImportPage() {
             if (!kode_dosen || !nama) throw new Error('Kolom wajib kosong')
 
             await supabase.from('dosen').upsert({ kode_dosen, nama, email, is_active: true }, { onConflict: 'kode_dosen' })
+
+          } else if (activeTab === 'matkul') {
+            const kode_matkul = row[headers.indexOf('kode_matkul')]?.toUpperCase()
+            const nama_matkul = row[headers.indexOf('nama_matkul')]
+            const kode_dosen = row[headers.indexOf('kode_dosen')]?.toUpperCase()
+            const prodi = row[headers.indexOf('prodi')]
+            const sks = parseInt(row[headers.indexOf('sks')]) || 3
+
+            if (!kode_matkul || !nama_matkul || !kode_dosen || !prodi) throw new Error('Kolom wajib kosong')
+            if (!['agroteknologi', 'agribisnis'].includes(prodi)) throw new Error(`Prodi tidak valid: ${prodi}`)
+
+            const dosen_id = dosenMap[kode_dosen]
+            if (!dosen_id) throw new Error(`Dosen dengan kode "${kode_dosen}" tidak ditemukan. Tambahkan dosen terlebih dahulu.`)
+
+            await supabase.from('mata_kuliah').upsert(
+              { kode_matkul, nama_matkul, dosen_id, prodi, sks, is_active: true },
+              { onConflict: 'kode_matkul' }
+            )
 
           } else if (activeTab === 'soal') {
             const ujian_id = row[headers.indexOf('ujian_id')]
@@ -177,25 +217,30 @@ export default function ImportPage() {
       </div>
 
       {/* Tab */}
-      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl">
-        {(['mahasiswa', 'dosen', 'soal'] as ImportType[]).map(tab => (
+      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl overflow-x-auto">
+        {(['mahasiswa', 'dosen', 'matkul', 'soal'] as ImportType[]).map(tab => (
           <button
             key={tab}
             onClick={() => { setActiveTab(tab); setFile(null); setPreview([]); setResult(null) }}
-            className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all capitalize ${
+            className={`flex-1 py-2 px-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
               activeTab === tab ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'
             }`}
           >
-            {tab === 'mahasiswa' ? '🎓 Mahasiswa' : tab === 'dosen' ? '👨‍🏫 Dosen' : '📝 Soal'}
+            {TAB_LABELS[tab]}
           </button>
         ))}
       </div>
 
       {/* Info format */}
       <div className="card bg-blue-50 border-blue-200 space-y-2">
-        <p className="text-sm font-semibold text-blue-700">Format CSV — {activeTab}</p>
-        <p className="text-xs text-blue-600 font-mono">{t.headers.join(', ')}</p>
+        <p className="text-sm font-semibold text-blue-700">Format CSV — {TAB_LABELS[activeTab].replace(/^\S+\s/, '')}</p>
+        <p className="text-xs text-blue-600 font-mono break-all">{t.headers.join(', ')}</p>
         <p className="text-xs text-blue-500">{t.info}</p>
+        {activeTab === 'matkul' && (
+          <p className="text-xs text-blue-500">
+            Urutan import yang disarankan: <strong>Dosen → Mata Kuliah → Mahasiswa → Ujian → Soal</strong>
+          </p>
+        )}
         <button onClick={() => downloadTemplate(activeTab)} className="text-xs text-blue-600 hover:text-blue-800 font-semibold underline">
           ↓ Download template CSV
         </button>
@@ -283,7 +328,7 @@ export default function ImportPage() {
               </svg>
               Mengimport...
             </span>
-          ) : `📥 Import ${activeTab} sekarang`}
+          ) : `📥 Import ${TAB_LABELS[activeTab].replace(/^\S+\s/, '')} sekarang`}
         </button>
       )}
 
