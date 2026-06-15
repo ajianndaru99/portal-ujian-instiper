@@ -216,6 +216,15 @@ export default function ImportPage() {
         <p className="text-sm text-gray-400">Upload file CSV untuk menambah data secara massal</p>
       </div>
 
+      {/* Link ke konversi Google Form */}
+      <a href="/admin/import-google-form" className="card bg-emerald-50 border-emerald-200 flex items-center justify-between hover:bg-emerald-100 transition-colors no-underline">
+        <div>
+          <p className="text-sm font-semibold text-emerald-700">📋 Import Soal dari Google Form</p>
+          <p className="text-xs text-emerald-600 mt-0.5">Konversi langsung dari jawaban Google Form (Sheets) ke soal ujian</p>
+        </div>
+        <span className="text-emerald-600 text-lg">→</span>
+      </a>
+
       {/* Tab */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-xl overflow-x-auto">
         {(['mahasiswa', 'dosen', 'matkul', 'soal'] as ImportType[]).map(tab => (
