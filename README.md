@@ -1,114 +1,92 @@
-# Portal Ujian Online — FAPERTA INSTIPER Yogyakarta
+# Portal Ujian — Import Google Form
 
-Sistem ujian online berbasis Next.js + Supabase untuk Fakultas Pertanian INSTIPER Yogyakarta.
-
-## Fitur
-- Login mahasiswa dengan NIM + kode ujian
-- Soal pilihan ganda & esai dengan pengacakan
-- Timer ujian dengan auto-submit saat waktu habis
-- Anti-cheat: deteksi pindah tab / blur browser dengan peringatan bertingkat
-- Offline-first: jawaban disimpan ke localStorage, auto-sync tiap 15 detik
-- Wake lock: cegah layar mati saat ujian di HP
-- Dashboard admin dengan monitoring live
-- Penilaian PG otomatis via PostgreSQL trigger
-
-## Stack
-- **Frontend:** Next.js 14 (App Router) + TypeScript + Tailwind CSS
-- **Backend:** Supabase (PostgreSQL + Auth + Realtime + RLS)
-- **Deploy:** Vercel
+Fitur konversi jawaban Google Form (via Google Sheets) menjadi soal ujian di database Supabase.
 
 ---
 
-## Setup Lokal
+## Cara Running (5 menit)
 
-### 1. Clone & Install
+### 1. Install dependencies
+
 ```bash
-git clone https://github.com/username/portal-ujian-instiper.git
-cd portal-ujian-instiper
+cd portal-ujian
 npm install
 ```
 
-### 2. Setup Environment Variables
-```bash
-cp .env.example .env.local
-```
-Isi `.env.local` dengan nilai dari Supabase Dashboard → Project Settings → API:
-```
-NEXT_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+### 2. Setup Supabase
+
+1. Buka [https://app.supabase.com](https://app.supabase.com) → buat project baru (gratis)
+2. Buka **SQL Editor** → paste isi file `supabase-schema.sql` → klik **Run**
+3. Buka **Project Settings → API**:
+   - Copy **Project URL** → isi `NEXT_PUBLIC_SUPABASE_URL` di `.env.local`
+   - Copy **anon / public key** → isi `NEXT_PUBLIC_SUPABASE_ANON_KEY` di `.env.local`
+
+### 3. Isi `.env.local`
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGci...
 ```
 
-### 3. Setup Database Supabase
-1. Buka Supabase Dashboard → SQL Editor
-2. Jalankan seluruh isi file `supabase/schema.sql`
-3. Buat akun admin pertama: Supabase Dashboard → Authentication → Users → Add user
-4. Setelah user terbuat, insert ke tabel `admins`:
-   ```sql
-   INSERT INTO admins (id, email, nama, role)
-   VALUES ('[UUID dari auth.users]', 'admin@instiper.ac.id', 'Nama Admin', 'superadmin');
-   ```
+### 4. Jalankan
 
-### 4. Jalankan Development Server
 ```bash
 npm run dev
 ```
-Buka [http://localhost:3000](http://localhost:3000)
+
+Buka [http://localhost:3000/admin/import-google-form](http://localhost:3000/admin/import-google-form)
 
 ---
 
-## Deploy ke Vercel
+## Cara Menggunakan Fitur Import
 
-1. Push ke GitHub
-2. Import repo di [vercel.com](https://vercel.com)
-3. Di Vercel → Settings → Environment Variables, tambahkan:
-   - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-4. Deploy
+### A. Siapkan Google Form
+
+Buat Google Form dengan urutan pertanyaan:
+
+| No | Judul Pertanyaan | Tipe Field |
+|----|-----------------|------------|
+| 1 | Nomor Urut Soal | Jawaban singkat |
+| 2 | Pertanyaan | Paragraf |
+| 3 | Tipe Soal | Pilihan ganda: `Pilihan Ganda` / `Esai` |
+| 4 | Pilihan A | Jawaban singkat |
+| 5 | Pilihan B | Jawaban singkat |
+| 6 | Pilihan C | Jawaban singkat |
+| 7 | Pilihan D | Jawaban singkat |
+| 8 | Kunci Jawaban | Pilihan ganda: `A` / `B` / `C` / `D` / `Tidak ada` |
+| 9 | Bobot Nilai | Jawaban singkat |
+
+### B. Export ke Google Sheets
+
+1. Di Google Form → tab **Responses** → klik ikon **Sheets** hijau
+2. Di Sheets: **File → Share → Akses umum → Siapa saja yang memiliki link (Viewer)**
+3. Copy URL sheet
+
+### C. Import
+
+1. Buka halaman import → pilih ujian tujuan
+2. Paste link Google Sheets → klik **Ambil Data**
+3. Cocokkan kolom (auto-mapping akan mencoba mendeteksi otomatis)
+4. Cek preview → klik **Import**
 
 ---
 
-## Struktur Proyek
+## Struktur File
+
 ```
-src/
-├── app/
-│   ├── page.tsx              # Halaman login mahasiswa
-│   ├── layout.tsx            # Root layout
-│   ├── globals.css           # Global styles + Tailwind
-│   ├── ujian/
-│   │   └── page.tsx          # Halaman pengerjaan ujian
-│   ├── selesai/
-│   │   └── page.tsx          # Halaman konfirmasi selesai
-│   └── admin/
-│       ├── page.tsx          # Login admin
-│       └── dashboard/
-│           └── page.tsx      # Dashboard monitoring
-└── lib/
-    ├── supabase.ts           # Supabase client
-    ├── types.ts              # TypeScript types
-    └── utils.ts              # Utility functions
-supabase/
-└── schema.sql                # Database schema lengkap
+portal-ujian/
+├── src/
+│   ├── app/
+│   │   ├── admin/import-google-form/
+│   │   │   └── page.tsx          ← Halaman utama import
+│   │   ├── api/sheet-csv/
+│   │   │   └── route.ts          ← API proxy Google Sheets (hindari CORS)
+│   │   ├── layout.tsx
+│   │   ├── page.tsx
+│   │   └── globals.css
+│   └── lib/
+│       └── supabase.ts           ← Supabase client
+├── .env.local                    ← Konfigurasi (wajib diisi)
+├── supabase-schema.sql           ← SQL untuk buat tabel di Supabase
+└── package.json
 ```
-
----
-
-## Penggunaan
-
-### Alur Mahasiswa
-1. Buka portal → masukkan NIM dan kode ujian dari dosen
-2. Sistem verifikasi → redirect ke halaman ujian
-3. Kerjakan soal → jawaban otomatis tersimpan
-4. Kumpulkan → halaman konfirmasi + nilai PG langsung
-
-### Alur Admin/Dosen
-1. Login di `/admin` dengan email + password
-2. Dashboard menampilkan monitoring ujian real-time
-3. Aktifkan ujian dan bagikan kode ujian ke mahasiswa
-
----
-
-## Catatan Keamanan
-- Kunci jawaban tidak pernah dikirim ke client
-- Penilaian PG dilakukan di server (PostgreSQL trigger)
-- RLS Supabase memastikan mahasiswa hanya akses data miliknya
-- Anti-cheat direkam di `log_aktivitas` untuk audit
