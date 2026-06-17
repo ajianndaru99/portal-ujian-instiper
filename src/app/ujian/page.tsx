@@ -49,10 +49,16 @@ export default function UjianPage() {
       const { data: sesiDB, error: errSesi } = await supabase.from('sesi_ujian').select('*').eq('token_sesi', token).single()
       if (errSesi || !sesiDB) { router.replace('/'); return }
       if (['selesai', 'auto_submit', 'paksa_submit'].includes(sesiDB.status)) { router.replace('/selesai'); return }
-      const { data: soalDB, error: errSoal } = await supabase
+      const { data: soalDBRaw, error: errSoal } = await supabase
         .from('soal').select('id, ujian_id, nomor_urut, pertanyaan, tipe, opsi_jawaban, bobot_nilai')
         .eq('ujian_id', ujian.id).order('nomor_urut')
-      if (errSoal || !soalDB) throw new Error('Gagal memuat soal')
+      if (errSoal || !soalDBRaw) throw new Error('Gagal memuat soal')
+      const soalDB = soalDBRaw.map((s: any) => ({
+        ...s,
+        opsi_jawaban: Array.isArray(s.opsi_jawaban)
+          ? s.opsi_jawaban
+          : (typeof s.opsi_jawaban === 'string' ? (() => { try { return JSON.parse(s.opsi_jawaban) } catch { return null } })() : s.opsi_jawaban),
+      }))
       let soalFinal = soalDB as Soal[]
       if (ujian.acak_soal) {
         if (sesiDB.urutan_soal && sesiDB.urutan_soal.length > 0) {

@@ -39,6 +39,7 @@ function KuisLangsungPanel({ ujianList, selectedUjian, setSelectedUjian }: {
   const [formTitle, setFormTitle] = useState('')
   const [drafts, setDrafts] = useState<SoalDraft[]>([])
   const [warning, setWarning] = useState('')
+  const [existingMaxNomor, setExistingMaxNomor] = useState(0)
 
   const [importing, setImporting] = useState(false)
   const [result, setResult] = useState<{ success: number; failed: number; errors: string[] } | null>(null)
@@ -50,6 +51,15 @@ function KuisLangsungPanel({ ujianList, selectedUjian, setSelectedUjian }: {
     setFetching(true); setFetchError(''); setResult(null); setDrafts([])
 
     try {
+      // Cek nomor urut tertinggi yang sudah ada di ujian ini agar tidak konflik
+      const { data: soalExist } = await supabase
+        .from('soal')
+        .select('nomor_urut')
+        .eq('ujian_id', selectedUjian)
+        .order('nomor_urut', { ascending: false })
+        .limit(1)
+      setExistingMaxNomor(soalExist?.[0]?.nomor_urut || 0)
+
       const res = await fetch(`/api/google-form-structure?url=${encodeURIComponent(formUrl.trim())}`)
       const json = await res.json()
       if (!res.ok) { setFetchError(json.error || 'Gagal mengambil data form.'); setFetching(false); return }
@@ -95,7 +105,7 @@ function KuisLangsungPanel({ ujianList, selectedUjian, setSelectedUjian }: {
 
         const { error } = await supabase.from('soal').insert({
           ujian_id: selectedUjian,
-          nomor_urut: i + 1,
+          nomor_urut: existingMaxNomor + i + 1,
           pertanyaan: d.title,
           tipe: d.type === 'pg' ? 'pg' : 'esai',
           opsi_jawaban: opsiArr ? JSON.stringify(opsiArr) : null,

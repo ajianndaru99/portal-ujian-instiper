@@ -28,6 +28,26 @@ interface UjianDetail {
   mata_kuliah: { nama_matkul: string } | null
 }
 
+/**
+ * Parse opsi_jawaban dengan aman. Kolom ini bertipe JSONB di database,
+ * jadi Supabase biasanya sudah mengembalikannya sebagai array. Namun
+ * untuk berjaga-jaga jika suatu saat tersimpan sebagai string JSON
+ * (misalnya dari proses import lama), fungsi ini menangani keduanya.
+ */
+function parseOpsiJawaban(raw: unknown): string[] | null {
+  if (!raw) return null
+  if (Array.isArray(raw)) return raw as string[]
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? parsed : null
+    } catch {
+      return null
+    }
+  }
+  return null
+}
+
 const EMPTY_SOAL = {
   pertanyaan: '',
   tipe: 'pg' as 'pg' | 'esai',
@@ -59,7 +79,11 @@ export default function UjianDetailPage() {
       supabase.from('soal').select('*').eq('ujian_id', id).order('nomor_urut'),
     ])
     setUjian(u)
-    setSoalList(s || [])
+    const normalized = (s || []).map((soal: any) => ({
+      ...soal,
+      opsi_jawaban: parseOpsiJawaban(soal.opsi_jawaban),
+    }))
+    setSoalList(normalized)
     setLoading(false)
   }
 
