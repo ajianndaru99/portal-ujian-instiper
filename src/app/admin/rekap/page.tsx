@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import * as XLSX from 'xlsx'
 
 interface RekapRow {
   sesi_id: string
@@ -120,7 +121,6 @@ export default function AdminRekapPage() {
     if (rekap.length === 0) return
     setExporting(true)
     try {
-      const XLSX = await import('xlsx')
       const ujian = ujianList.find(u => u.id === selectedUjian)
       const namaFile = `Rekap_${ujian?.kode_ujian || 'Ujian'}_${new Date().toISOString().slice(0, 10)}`
 
