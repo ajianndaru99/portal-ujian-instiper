@@ -36,6 +36,14 @@ interface SoalRingkas {
   nomor_urut: number
   tipe: 'pg' | 'esai'
   pertanyaan: string
+  bobot_nilai: number
+}
+
+interface JawabanDetail {
+  id: string
+  jawaban_mahasiswa: string
+  nilai_esai: number | null
+  catatan_esai: string | null
 }
 
 function formatWaktu(iso: string | null): string {
@@ -62,7 +70,10 @@ export default function AdminRekapPage() {
   const [selectedUjian, setSelectedUjian] = useState('')
   const [rekap, setRekap] = useState<RekapRow[]>([])
   const [soalList, setSoalList] = useState<SoalRingkas[]>([])
-  const [jawabanMap, setJawabanMap] = useState<Record<string, Record<string, string>>>({})
+  const [jawabanMap, setJawabanMap] = useState<Record<string, Record<string, JawabanDetail>>>({})
+  const [expandedSesi, setExpandedSesi] = useState<string | null>(null)
+  const [editValues, setEditValues] = useState<Record<string, { nilai: string; catatan: string }>>({})
+  const [savingJawabanId, setSavingJawabanId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [resetting, setResetting] = useState<string | null>(null)
@@ -114,7 +125,7 @@ export default function AdminRekapPage() {
       // Ambil daftar soal (untuk header kolom) dan semua jawaban (untuk isi sel)
       const { data: soalData } = await supabase
         .from('soal')
-        .select('id, nomor_urut, tipe, pertanyaan')
+        .select('id, nomor_urut, tipe, pertanyaan, bobot_nilai')
         .eq('ujian_id', ujianId)
         .order('nomor_urut')
       setSoalList(soalData || [])
@@ -123,15 +134,26 @@ export default function AdminRekapPage() {
       if (sesiIds.length > 0 && soalData && soalData.length > 0) {
         const { data: jawabanData } = await supabase
           .from('jawaban')
-          .select('sesi_id, soal_id, jawaban_mahasiswa')
+          .select('id, sesi_id, soal_id, jawaban_mahasiswa, nilai_esai, catatan_esai')
           .in('sesi_id', sesiIds)
 
-        const map: Record<string, Record<string, string>> = {}
-        jawabanData?.forEach(j => {
+        const map: Record<string, Record<string, JawabanDetail>> = {}
+        const initEdit: Record<string, { nilai: string; catatan: string }> = {}
+        jawabanData?.forEach((j: any) => {
           if (!map[j.sesi_id]) map[j.sesi_id] = {}
-          map[j.sesi_id][j.soal_id] = j.jawaban_mahasiswa || ''
+          map[j.sesi_id][j.soal_id] = {
+            id: j.id,
+            jawaban_mahasiswa: j.jawaban_mahasiswa || '',
+            nilai_esai: j.nilai_esai,
+            catatan_esai: j.catatan_esai,
+          }
+          initEdit[j.id] = {
+            nilai: j.nilai_esai !== null ? String(j.nilai_esai) : '',
+            catatan: j.catatan_esai || '',
+          }
         })
         setJawabanMap(map)
+        setEditValues(initEdit)
       }
     } catch (err) { console.error(err) }
     finally { setLoading(false) }
@@ -149,6 +171,58 @@ export default function AdminRekapPage() {
     finally { setResetting(null) }
   }
 
+  async function simpanNilaiEsai(jawabanId: string, sesiId: string, bobotMaks: number) {
+    const val = editValues[jawabanId]
+    if (!val) return
+
+    const nilai = parseFloat(val.nilai)
+    if (isNaN(nilai) || nilai < 0 || nilai > bobotMaks) {
+      alert(`Nilai harus antara 0 - ${bobotMaks}`)
+      return
+    }
+
+    setSavingJawabanId(jawabanId)
+    try {
+      const { error } = await supabase
+        .from('jawaban')
+        .update({ nilai_esai: nilai, catatan_esai: val.catatan || null })
+        .eq('id', jawabanId)
+      if (error) throw error
+
+      await supabase.rpc('hitung_nilai_final', { p_sesi_id: sesiId })
+
+      // Refresh ringan: ambil ulang nilai PG/Esai/Final untuk sesi ini saja
+      const { data: sesiUpdated } = await supabase
+        .from('sesi_ujian')
+        .select('nilai_pg, nilai_esai, nilai_final')
+        .eq('id', sesiId)
+        .single()
+
+      setRekap(prev => prev.map(r => r.sesi_id === sesiId
+        ? { ...r, nilai_pg: sesiUpdated?.nilai_pg ?? r.nilai_pg, nilai_esai: sesiUpdated?.nilai_esai ?? r.nilai_esai, nilai_final: sesiUpdated?.nilai_final ?? r.nilai_final }
+        : r
+      ))
+      setJawabanMap(prev => {
+        const next = { ...prev }
+        if (next[sesiId]) {
+          const soalIdForJawaban = Object.keys(next[sesiId]).find(sid => next[sesiId][sid].id === jawabanId)
+          if (soalIdForJawaban) {
+            next[sesiId] = {
+              ...next[sesiId],
+              [soalIdForJawaban]: { ...next[sesiId][soalIdForJawaban], nilai_esai: nilai, catatan_esai: val.catatan || null },
+            }
+          }
+        }
+        return next
+      })
+    } catch (err) {
+      console.error(err)
+      alert('Gagal menyimpan nilai esai.')
+    } finally {
+      setSavingJawabanId(null)
+    }
+  }
+
   async function handleExportExcel() {
     if (rekap.length === 0) return
     setExporting(true)
@@ -163,10 +237,10 @@ export default function AdminRekapPage() {
       const dataJawaban = filtered.map((r, i) => {
         const row: Record<string, any> = { 'No': i + 1, 'Nama Mahasiswa': r.nama_mahasiswa, 'NIM': r.nim }
         soalPG.forEach(s => {
-          row[`PG ${s.nomor_urut}`] = jawabanMap[r.sesi_id]?.[s.id] || '-'
+          row[`PG ${s.nomor_urut}`] = jawabanMap[r.sesi_id]?.[s.id]?.jawaban_mahasiswa || '-'
         })
         soalEsai.forEach(s => {
-          row[`Esai ${s.nomor_urut}`] = jawabanMap[r.sesi_id]?.[s.id] || '(tidak dijawab)'
+          row[`Esai ${s.nomor_urut}`] = jawabanMap[r.sesi_id]?.[s.id]?.jawaban_mahasiswa || '(tidak dijawab)'
         })
         row['Nilai PG'] = r.nilai_pg !== null ? Number(r.nilai_pg.toFixed(2)) : '-'
         row['Nilai Esai'] = r.nilai_esai !== null ? Number(r.nilai_esai.toFixed(2)) : '-'
@@ -328,7 +402,12 @@ export default function AdminRekapPage() {
               <tbody>
                 {filtered.length === 0 ? (
                   <tr><td colSpan={13} style={{ textAlign: 'center', padding: 32, color: 'var(--admin-text-subtle)' }}>Tidak ada data.</td></tr>
-                ) : filtered.map((r, i) => (
+                ) : filtered.map((r, i) => {
+                  const soalEsaiUjian = soalList.filter(s => s.tipe === 'esai')
+                  const adaEsai = soalEsaiUjian.length > 0
+                  const sudahDinilaiSemua = adaEsai && soalEsaiUjian.every(s => jawabanMap[r.sesi_id]?.[s.id]?.nilai_esai !== null && jawabanMap[r.sesi_id]?.[s.id]?.nilai_esai !== undefined)
+                  return (
+                  <>
                   <tr key={r.sesi_id} style={{ background: r.jumlah_pelanggaran > 0 ? '#fff5f5' : undefined }}>
                     <td style={{ color: 'var(--admin-text-subtle)', width: 36 }}>{i + 1}</td>
                     <td><span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.75rem', fontWeight: 600, color: 'var(--admin-text)' }}>{r.nim}</span></td>
@@ -348,7 +427,20 @@ export default function AdminRekapPage() {
                         : <span style={{ color: '#cbd5e1' }}>—</span>}
                     </td>
                     <td style={{ textAlign: 'center', fontWeight: 600 }}>{r.nilai_pg !== null ? r.nilai_pg.toFixed(1) : <span style={{ color: '#cbd5e1' }}>—</span>}</td>
-                    <td style={{ textAlign: 'center', fontWeight: 600 }}>{r.nilai_esai !== null ? r.nilai_esai.toFixed(1) : <span style={{ color: '#cbd5e1' }}>—</span>}</td>
+                    <td style={{ textAlign: 'center', fontWeight: 600 }}>
+                      {adaEsai ? (
+                        <button
+                          onClick={() => setExpandedSesi(expandedSesi === r.sesi_id ? null : r.sesi_id)}
+                          style={{
+                            fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', border: 'none', background: 'none',
+                            color: sudahDinilaiSemua ? '#16a34a' : '#d97706', display: 'inline-flex', alignItems: 'center', gap: 4,
+                          }}
+                        >
+                          {r.nilai_esai !== null ? r.nilai_esai.toFixed(1) : sudahDinilaiSemua ? '0.0' : 'Nilai'}
+                          <span style={{ fontSize: '0.6rem' }}>{expandedSesi === r.sesi_id ? '▲' : '▼'}</span>
+                        </button>
+                      ) : (r.nilai_esai !== null ? r.nilai_esai.toFixed(1) : <span style={{ color: '#cbd5e1' }}>—</span>)}
+                    </td>
                     <td style={{ textAlign: 'center' }}>
                       {r.nilai_final !== null
                         ? <span style={{ fontWeight: 700, color: r.nilai_final >= 55 ? '#16a34a' : '#dc2626' }}>{r.nilai_final.toFixed(1)}</span>
@@ -373,13 +465,71 @@ export default function AdminRekapPage() {
                       </button>
                     </td>
                   </tr>
-                ))}
+                  {expandedSesi === r.sesi_id && adaEsai && (
+                    <tr>
+                      <td colSpan={13} style={{ padding: 0, background: '#fafbfc' }}>
+                        <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                          {soalEsaiUjian.map(soal => {
+                            const detail = jawabanMap[r.sesi_id]?.[soal.id]
+                            if (!detail) return null
+                            return (
+                              <div key={soal.id} style={{ background: '#fff', borderRadius: 10, padding: 14, border: '1px solid var(--admin-border)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
+                                  <p style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--admin-text)' }}>
+                                    <span style={{ color: 'var(--admin-text-subtle)' }}>Soal {soal.nomor_urut}.</span> {soal.pertanyaan}
+                                  </p>
+                                </div>
+                                <div style={{ background: '#f8fafc', borderRadius: 8, padding: '10px 12px', marginBottom: 10 }}>
+                                  <p style={{ fontSize: '0.7rem', color: 'var(--admin-text-subtle)', marginBottom: 4 }}>Jawaban mahasiswa:</p>
+                                  <p style={{ fontSize: '0.825rem', color: 'var(--admin-text)', whiteSpace: 'pre-wrap' }}>
+                                    {detail.jawaban_mahasiswa || <span style={{ fontStyle: 'italic', color: '#cbd5e1' }}>Tidak dijawab</span>}
+                                  </p>
+                                </div>
+                                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                                  <div style={{ flex: 1, minWidth: 160 }}>
+                                    <label style={{ fontSize: '0.7rem', color: 'var(--admin-text-subtle)', display: 'block', marginBottom: 4 }}>Catatan (opsional)</label>
+                                    <input
+                                      className="admin-input"
+                                      placeholder="Catatan untuk mahasiswa..."
+                                      value={editValues[detail.id]?.catatan || ''}
+                                      onChange={e => setEditValues(prev => ({ ...prev, [detail.id]: { ...prev[detail.id], catatan: e.target.value } }))}
+                                    />
+                                  </div>
+                                  <div style={{ width: 110 }}>
+                                    <label style={{ fontSize: '0.7rem', color: 'var(--admin-text-subtle)', display: 'block', marginBottom: 4 }}>Nilai (0-{soal.bobot_nilai})</label>
+                                    <input
+                                      type="number"
+                                      className="admin-input"
+                                      value={editValues[detail.id]?.nilai ?? ''}
+                                      onChange={e => setEditValues(prev => ({ ...prev, [detail.id]: { ...prev[detail.id], nilai: e.target.value } }))}
+                                    />
+                                  </div>
+                                  <button
+                                    onClick={() => simpanNilaiEsai(detail.id, r.sesi_id, soal.bobot_nilai)}
+                                    disabled={savingJawabanId === detail.id}
+                                    className="admin-btn admin-btn-primary"
+                                    style={{ height: 36 }}
+                                  >
+                                    {savingJawabanId === detail.id ? '...' : 'Simpan'}
+                                  </button>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </>
+                  )
+                })}
               </tbody>
             </table>
           </div>
           <div style={{ padding: '10px 14px', borderTop: '1px solid var(--admin-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <p style={{ fontSize: '0.75rem', color: 'var(--admin-text-subtle)' }}>
               {filtered.length} dari {rekap.length} peserta · Tombol ↺ Reset untuk izinkan mahasiswa ujian ulang
+              {soalList.some(s => s.tipe === 'esai') && ' · Klik nilai Esai untuk membaca & menilai jawaban'}
             </p>
           </div>
         </div>
