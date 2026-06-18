@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import * as XLSX from 'xlsx'
 
 interface UjianOption {
   id: string
@@ -179,64 +178,23 @@ export default function PenilaianEsaiPage() {
     }
   }
 
-  function downloadExcel() {
-    if (mahasiswaList.length === 0) return
-    const ujian = ujianList.find(u => u.id === selectedUjian)
-    const namaFile = `Jawaban_Esai_${ujian?.kode_ujian || 'Ujian'}_${new Date().toISOString().slice(0, 10)}`
-
-    // Sheet 1: Jawaban Esai Lengkap (1 baris = 1 mahasiswa, kolom = tiap soal)
-    const soalSet = mahasiswaList[0]?.jawabanList || []
-    const dataJawaban = mahasiswaList.map((m, i) => {
-      const row: Record<string, any> = { 'No': i + 1, 'NIM': m.nim, 'Nama': m.nama }
-      m.jawabanList.forEach(j => {
-        row[`Soal ${j.nomor_urut} - Jawaban`] = j.jawaban_mahasiswa || '(tidak dijawab)'
-        row[`Soal ${j.nomor_urut} - Nilai (maks ${j.bobot_nilai})`] = j.nilai_esai ?? ''
-      })
-      const total = m.jawabanList.reduce((sum, j) => sum + (j.nilai_esai || 0), 0)
-      row['Total Nilai Esai'] = total
-      row['Status Penilaian'] = m.sudahDinilaiSemua ? 'Selesai dinilai' : 'Belum lengkap'
-      return row
-    })
-
-    // Sheet 2: Ringkasan per soal (untuk dosen baca pertanyaan & rekap cepat)
-    const dataSoal = soalSet.map(s => ({
-      'No Soal': s.nomor_urut,
-      'Pertanyaan': s.pertanyaan,
-      'Bobot Maksimal': s.bobot_nilai,
-    }))
-
-    const wb = XLSX.utils.book_new()
-
-    const wsJawaban = XLSX.utils.json_to_sheet(dataJawaban)
-    const colWidths = [{ wch: 4 }, { wch: 12 }, { wch: 22 }]
-    soalSet.forEach(() => { colWidths.push({ wch: 40 }, { wch: 14 }) })
-    colWidths.push({ wch: 14 }, { wch: 16 })
-    wsJawaban['!cols'] = colWidths
-    XLSX.utils.book_append_sheet(wb, wsJawaban, 'Jawaban Esai')
-
-    const wsSoal = XLSX.utils.json_to_sheet(dataSoal)
-    wsSoal['!cols'] = [{ wch: 8 }, { wch: 60 }, { wch: 14 }]
-    XLSX.utils.book_append_sheet(wb, wsSoal, 'Daftar Soal Esai')
-
-    XLSX.writeFile(wb, `${namaFile}.xlsx`)
-  }
-
   const filteredList = filterBelumNilai ? mahasiswaList.filter(m => !m.sudahDinilaiSemua) : mahasiswaList
   const totalBelumNilai = mahasiswaList.filter(m => !m.sudahDinilaiSemua).length
 
   return (
     <div className="max-w-3xl space-y-5">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-gray-800">Penilaian Esai</h1>
-          <p className="text-sm text-gray-400">Baca dan nilai jawaban esai mahasiswa secara manual</p>
-        </div>
-        {mahasiswaList.length > 0 && (
-          <button onClick={downloadExcel} className="btn-secondary text-sm px-4 py-2.5">
-            📥 Export Jawaban (Excel)
-          </button>
-        )}
+      <div>
+        <h1 className="text-xl font-bold text-gray-800">Penilaian Esai</h1>
+        <p className="text-sm text-gray-400">Baca dan nilai jawaban esai mahasiswa secara manual</p>
       </div>
+
+      {mahasiswaList.length > 0 && (
+        <div className="card bg-blue-50 border-blue-200">
+          <p className="text-xs text-blue-700">
+            💡 Untuk mengunduh seluruh jawaban (PG + Esai) dalam satu file Excel, buka menu <strong>Rekap Nilai</strong> dan klik tombol Export Excel.
+          </p>
+        </div>
+      )}
 
       <div className="card space-y-3">
         <label className="block text-sm font-semibold text-gray-700">Pilih Ujian</label>
