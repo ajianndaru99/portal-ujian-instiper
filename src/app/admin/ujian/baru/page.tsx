@@ -11,11 +11,34 @@ const MINAT_BY_PRODI: Record<string, string[]> = {
   agribisnis: ['smbp', 'sea', 'spa'],
 }
 
+// Kelas A-L (12 kelas). Jika ke depan kelas bertambah lagi, cukup ubah daftar ini.
+const KELAS_OPTIONS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L']
+
+// Rentang angkatan: 2020 sampai tahun berjalan saat ini, urut terbaru dulu
+// supaya angkatan yang relevan (untuk ujian susulan dari angkatan sebelumnya
+// sekalipun) selalu mudah dijangkau tanpa perlu scroll panjang.
+function buildAngkatanOptions(): string[] {
+  const tahunSekarang = new Date().getFullYear()
+  const tahunMulai = 2020
+  const opts: string[] = []
+  for (let t = tahunSekarang; t >= tahunMulai; t--) opts.push(String(t))
+  return opts
+}
+
+// Default saat form pertama dibuka: 3 angkatan paling baru ter-pilih otomatis,
+// karena ujian sering diikuti angkatan aktif + 1-2 angkatan susulan sebelumnya.
+// Admin tetap bebas menambah/mengurangi pilihan ini secara manual.
+function defaultAngkatan(opsi: string[]): string[] {
+  return opsi.slice(0, 3)
+}
+
 export default function BuatUjianPage() {
   const router = useRouter()
   const [matkulList, setMatkulList] = useState<MatkulOption[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+
+  const angkatanOptions = buildAngkatanOptions()
 
   const [form, setForm] = useState({
     matkul_id: '',
@@ -24,7 +47,7 @@ export default function BuatUjianPage() {
     prodi_target: 'agroteknologi',
     minat_target: [] as string[],
     kelas_target: [] as string[],
-    angkatan_target: [] as string[],
+    angkatan_target: defaultAngkatan(angkatanOptions),
     durasi_menit: 90,
     kode_ujian: '',
     status: 'draft',
@@ -116,7 +139,6 @@ export default function BuatUjianPage() {
   }
 
   const minatOptions = MINAT_BY_PRODI[form.prodi_target] || []
-  const angkatanOptions = ['2021', '2022', '2023', '2024', '2025']
 
   return (
     <div className="max-w-2xl space-y-5">
@@ -252,7 +274,7 @@ export default function BuatUjianPage() {
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Kelas (kosongkan = semua kelas)</label>
           <div className="flex flex-wrap gap-2">
-            {['A', 'B', 'C', 'D'].map(k => (
+            {KELAS_OPTIONS.map(k => (
               <button
                 key={k}
                 onClick={() => toggleArr('kelas_target', k)}
@@ -266,10 +288,23 @@ export default function BuatUjianPage() {
               </button>
             ))}
           </div>
+          {form.kelas_target.length > 0 && (
+            <button
+              onClick={() => setForm(p => ({ ...p, kelas_target: [] }))}
+              className="text-xs text-gray-400 hover:text-gray-600 mt-1.5 underline"
+            >
+              Kosongkan pilihan kelas (= semua kelas)
+            </button>
+          )}
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Angkatan (kosongkan = semua angkatan)</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Angkatan (kosongkan = semua angkatan)
+          </label>
+          <p className="text-xs text-gray-400 mb-2">
+            3 angkatan terbaru terpilih otomatis — sesuaikan jika ada peserta susulan dari angkatan lain.
+          </p>
           <div className="flex flex-wrap gap-2">
             {angkatanOptions.map(a => (
               <button
@@ -285,6 +320,14 @@ export default function BuatUjianPage() {
               </button>
             ))}
           </div>
+          {form.angkatan_target.length > 0 && (
+            <button
+              onClick={() => setForm(p => ({ ...p, angkatan_target: [] }))}
+              className="text-xs text-gray-400 hover:text-gray-600 mt-1.5 underline"
+            >
+              Kosongkan pilihan angkatan (= semua angkatan)
+            </button>
+          )}
         </div>
       </div>
 

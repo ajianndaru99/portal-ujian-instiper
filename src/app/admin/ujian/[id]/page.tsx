@@ -14,19 +14,57 @@ interface Soal {
   bobot_nilai: number
 }
 
+interface MatkulOption { id: string; kode_matkul: string; nama_matkul: string; prodi: string }
+
 interface UjianDetail {
   id: string
   judul: string
+  deskripsi: string | null
   kode_ujian: string
   status: string
   durasi_menit: number
+  matkul_id: string
   prodi_target: string
   minat_target: string[]
   kelas_target: string[] | null
   angkatan_target: number[] | null
   acak_soal: boolean
+  acak_pilihan: boolean
+  maks_pelanggaran: number
   mata_kuliah: { nama_matkul: string } | null
 }
+
+const MINAT_BY_PRODI: Record<string, string[]> = {
+  agroteknologi: ['spks', 'antan'],
+  agribisnis: ['smbp', 'sea', 'spa'],
+}
+
+// Kelas A-L (12 kelas). Jika ke depan kelas bertambah lagi, cukup ubah daftar ini.
+const KELAS_OPTIONS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L']
+
+// Rentang angkatan: 2020 sampai tahun berjalan, urut terbaru dulu.
+function buildAngkatanOptions(): string[] {
+  const tahunSekarang = new Date().getFullYear()
+  const tahunMulai = 2020
+  const opts: string[] = []
+  for (let t = tahunSekarang; t >= tahunMulai; t--) opts.push(String(t))
+  return opts
+}
+
+// Label huruf untuk opsi jawaban ke- (0-indexed): A, B, C, ... Z, lalu AA, AB, dst
+// jika suatu saat batas maksimum opsi dinaikkan melebihi 26.
+function labelHuruf(index: number): string {
+  let n = index
+  let label = ''
+  do {
+    label = String.fromCharCode(65 + (n % 26)) + label
+    n = Math.floor(n / 26) - 1
+  } while (n >= 0)
+  return label
+}
+
+const MIN_OPSI = 2
+const MAKS_OPSI = 10
 
 /**
  * Parse opsi_jawaban dengan aman. Kolom ini bertipe JSONB di database,
@@ -48,10 +86,16 @@ function parseOpsiJawaban(raw: unknown): string[] | null {
   return null
 }
 
+// Buang prefix "A. "/"B. " dst dari teks opsi yang tersimpan, supaya form
+// edit menampilkan teks polos (prefix akan ditambahkan ulang saat disimpan).
+function stripPrefixOpsi(opsi: string): string {
+  return opsi.replace(/^[A-Za-z]+\.\s*/, '')
+}
+
 const EMPTY_SOAL = {
   pertanyaan: '',
   tipe: 'pg' as 'pg' | 'esai',
-  opsi: ['', '', '', ''],
+  opsi: ['', ''] as string[],
   kunci: 'A',
   bobot: 20,
 }
@@ -62,6 +106,7 @@ export default function UjianDetailPage() {
 
   const [ujian, setUjian] = useState<UjianDetail | null>(null)
   const [soalList, setSoalList] = useState<Soal[]>([])
+  const [matkulList, setMatkulList] = useState<MatkulOption[]>([])
   const [loading, setLoading] = useState(true)
 
   // Form tambah/edit soal
@@ -71,12 +116,34 @@ export default function UjianDetailPage() {
   const [savingSoal, setSavingSoal] = useState(false)
   const [formError, setFormError] = useState('')
 
+  // Modal edit ujian
+  const [showEditUjian, setShowEditUjian] = useState(false)
+  const [savingUjian, setSavingUjian] = useState(false)
+  const [editUjianError, setEditUjianError] = useState('')
+  const [formUjian, setFormUjian] = useState({
+    matkul_id: '',
+    judul: '',
+    deskripsi: '',
+    prodi_target: 'agroteknologi',
+    minat_target: [] as string[],
+    kelas_target: [] as string[],
+    angkatan_target: [] as string[],
+    durasi_menit: 90,
+    kode_ujian: '',
+    acak_soal: true,
+    acak_pilihan: false,
+    maks_pelanggaran: 3,
+  })
+
+  const angkatanOptions = buildAngkatanOptions()
+
   useEffect(() => { loadData() }, [id])
 
   async function loadData() {
-    const [{ data: u }, { data: s }] = await Promise.all([
+    const [{ data: u }, { data: s }, { data: m }] = await Promise.all([
       supabase.from('ujian').select('*, mata_kuliah(nama_matkul)').eq('id', id).single(),
       supabase.from('soal').select('*').eq('ujian_id', id).order('nomor_urut'),
+      supabase.from('mata_kuliah').select('id, kode_matkul, nama_matkul, prodi').eq('is_active', true).order('nama_matkul'),
     ])
     setUjian(u)
     const normalized = (s || []).map((soal: any) => ({
@@ -84,22 +151,30 @@ export default function UjianDetailPage() {
       opsi_jawaban: parseOpsiJawaban(soal.opsi_jawaban),
     }))
     setSoalList(normalized)
+    setMatkulList(m || [])
     setLoading(false)
   }
 
+  // ============================================================
+  // FORM SOAL — opsi jawaban dinamis
+  // ============================================================
+
   function bukaFormBaru() {
     setEditingSoalId(null)
-    setFormSoal({ ...EMPTY_SOAL })
+    setFormSoal({ ...EMPTY_SOAL, opsi: ['', ''] })
     setFormError('')
     setShowForm(true)
   }
 
   function bukaFormEdit(soal: Soal) {
     setEditingSoalId(soal.id)
+    const opsiBersih = soal.opsi_jawaban
+      ? soal.opsi_jawaban.map(stripPrefixOpsi)
+      : ['', '']
     setFormSoal({
       pertanyaan: soal.pertanyaan,
       tipe: soal.tipe,
-      opsi: soal.opsi_jawaban ? [...soal.opsi_jawaban, '', '', '', ''].slice(0, 4) : ['', '', '', ''],
+      opsi: opsiBersih.length >= MIN_OPSI ? opsiBersih : [...opsiBersih, ''],
       kunci: soal.kunci_jawaban || 'A',
       bobot: soal.bobot_nilai,
     })
@@ -107,11 +182,37 @@ export default function UjianDetailPage() {
     setShowForm(true)
   }
 
+  function tambahOpsi() {
+    setFormSoal(prev => {
+      if (prev.opsi.length >= MAKS_OPSI) return prev
+      return { ...prev, opsi: [...prev.opsi, ''] }
+    })
+  }
+
+  function hapusOpsi(index: number) {
+    setFormSoal(prev => {
+      if (prev.opsi.length <= MIN_OPSI) return prev
+      const hurufDihapus = labelHuruf(index)
+      const opsiBaru = prev.opsi.filter((_, i) => i !== index)
+      // Jika kunci jawaban yang dihapus, reset ke opsi pertama yang tersisa
+      const kunciBaru = prev.kunci === hurufDihapus ? labelHuruf(0) : prev.kunci
+      return { ...prev, opsi: opsiBaru, kunci: kunciBaru }
+    })
+  }
+
+  function updateOpsi(index: number, value: string) {
+    setFormSoal(prev => {
+      const opsi = [...prev.opsi]
+      opsi[index] = value
+      return { ...prev, opsi }
+    })
+  }
+
   async function simpanSoal() {
     if (!formSoal.pertanyaan.trim()) { setFormError('Pertanyaan harus diisi.'); return }
     if (formSoal.tipe === 'pg') {
       const filled = formSoal.opsi.filter(o => o.trim())
-      if (filled.length < 2) { setFormError('Minimal 2 pilihan jawaban harus diisi.'); return }
+      if (filled.length < MIN_OPSI) { setFormError(`Minimal ${MIN_OPSI} pilihan jawaban harus diisi.`); return }
     }
     setSavingSoal(true)
     setFormError('')
@@ -121,10 +222,9 @@ export default function UjianDetailPage() {
         ? soalList.find(s => s.id === editingSoalId)?.nomor_urut || 1
         : (soalList.length > 0 ? Math.max(...soalList.map(s => s.nomor_urut)) + 1 : 1)
 
-      const opsiLabels = ['A', 'B', 'C', 'D']
       const opsiData = formSoal.tipe === 'pg'
         ? formSoal.opsi
-            .map((o, i) => o.trim() ? `${opsiLabels[i]}. ${o.trim()}` : null)
+            .map((o, i) => o.trim() ? `${labelHuruf(i)}. ${o.trim()}` : null)
             .filter(Boolean)
         : null
 
@@ -164,10 +264,91 @@ export default function UjianDetailPage() {
     loadData()
   }
 
+  // ============================================================
+  // MODAL EDIT UJIAN
+  // ============================================================
+
+  function bukaEditUjian() {
+    if (!ujian) return
+    setFormUjian({
+      matkul_id: ujian.matkul_id,
+      judul: ujian.judul,
+      deskripsi: ujian.deskripsi || '',
+      prodi_target: ujian.prodi_target,
+      minat_target: ujian.minat_target || [],
+      kelas_target: ujian.kelas_target || [],
+      angkatan_target: (ujian.angkatan_target || []).map(String),
+      durasi_menit: ujian.durasi_menit,
+      kode_ujian: ujian.kode_ujian,
+      acak_soal: ujian.acak_soal,
+      acak_pilihan: ujian.acak_pilihan,
+      maks_pelanggaran: ujian.maks_pelanggaran,
+    })
+    setEditUjianError('')
+    setShowEditUjian(true)
+  }
+
+  function toggleArrUjian(field: 'minat_target' | 'kelas_target', val: string) {
+    setFormUjian(prev => {
+      const arr = prev[field] as string[]
+      return { ...prev, [field]: arr.includes(val) ? arr.filter(x => x !== val) : [...arr, val] }
+    })
+  }
+
+  function toggleAngkatanUjian(val: string) {
+    setFormUjian(prev => ({
+      ...prev,
+      angkatan_target: prev.angkatan_target.includes(val)
+        ? prev.angkatan_target.filter(x => x !== val)
+        : [...prev.angkatan_target, val]
+    }))
+  }
+
+  async function simpanEditUjian() {
+    if (!formUjian.matkul_id) { setEditUjianError('Pilih mata kuliah terlebih dahulu.'); return }
+    if (!formUjian.judul.trim()) { setEditUjianError('Judul ujian harus diisi.'); return }
+    if (formUjian.minat_target.length === 0) { setEditUjianError('Pilih minimal satu minat target.'); return }
+    if (!formUjian.kode_ujian.trim()) { setEditUjianError('Kode ujian harus diisi.'); return }
+
+    setSavingUjian(true)
+    setEditUjianError('')
+
+    try {
+      const { error: err } = await supabase
+        .from('ujian')
+        .update({
+          matkul_id: formUjian.matkul_id,
+          judul: formUjian.judul.trim(),
+          deskripsi: formUjian.deskripsi.trim() || null,
+          prodi_target: formUjian.prodi_target,
+          minat_target: formUjian.minat_target,
+          kelas_target: formUjian.kelas_target.length > 0 ? formUjian.kelas_target : null,
+          angkatan_target: formUjian.angkatan_target.length > 0
+            ? formUjian.angkatan_target.map(Number)
+            : null,
+          durasi_menit: formUjian.durasi_menit,
+          kode_ujian: formUjian.kode_ujian.toUpperCase().trim(),
+          acak_soal: formUjian.acak_soal,
+          acak_pilihan: formUjian.acak_pilihan,
+          maks_pelanggaran: formUjian.maks_pelanggaran,
+        })
+        .eq('id', id)
+
+      if (err) throw err
+      setShowEditUjian(false)
+      loadData()
+    } catch (e: any) {
+      setEditUjianError(e.message || 'Gagal menyimpan perubahan ujian.')
+    } finally {
+      setSavingUjian(false)
+    }
+  }
+
   if (loading) return <div className="text-center py-12 text-gray-400">Memuat...</div>
   if (!ujian) return <div className="text-center py-12 text-gray-400">Ujian tidak ditemukan.</div>
 
   const totalBobot = soalList.reduce((s, q) => s + q.bobot_nilai, 0)
+  const minatOptionsUjian = MINAT_BY_PRODI[formUjian.prodi_target] || []
 
   return (
     <div className="max-w-3xl space-y-5">
@@ -179,6 +360,9 @@ export default function UjianDetailPage() {
           <p className="text-sm text-gray-400">{ujian.mata_kuliah?.nama_matkul} · {ujian.durasi_menit} menit</p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          <button onClick={bukaEditUjian} className="btn-secondary text-sm px-4 py-2">
+            ✎ Edit
+          </button>
           {ujian.status === 'draft' && (
             <button onClick={() => ubahStatus('aktif')} className="btn-primary text-sm px-4 py-2">
               ▶ Aktifkan
@@ -258,7 +442,7 @@ export default function UjianDetailPage() {
                     {soal.tipe === 'pg' && soal.opsi_jawaban && (
                       <div className="mt-2 space-y-1">
                         {soal.opsi_jawaban.map((opsi, i) => {
-                          const huruf = opsi.charAt(0)
+                          const huruf = opsi.split('.')[0]
                           const benar = huruf === soal.kunci_jawaban
                           return (
                             <p key={i} className={`text-xs ${benar ? 'text-green-600 font-semibold' : 'text-gray-500'}`}>
@@ -330,38 +514,58 @@ export default function UjianDetailPage() {
               />
             </div>
 
-            {/* Pilihan ganda */}
+            {/* Pilihan ganda — opsi dinamis */}
             {formSoal.tipe === 'pg' && (
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">Pilihan Jawaban *</label>
-                {['A', 'B', 'C', 'D'].map((huruf, i) => (
-                  <div key={huruf} className="flex items-center gap-2">
-                    <span className={`w-7 h-7 rounded-lg text-xs font-bold flex items-center justify-center flex-shrink-0 ${
-                      formSoal.kunci === huruf ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-600'
-                    }`}>{huruf}</span>
-                    <input
-                      className="input-field text-sm flex-1 py-2"
-                      placeholder={`Pilihan ${huruf}`}
-                      value={formSoal.opsi[i]}
-                      onChange={e => {
-                        const opsi = [...formSoal.opsi]
-                        opsi[i] = e.target.value
-                        setFormSoal(p => ({ ...p, opsi }))
-                      }}
-                    />
-                    <button
-                      onClick={() => setFormSoal(p => ({ ...p, kunci: huruf }))}
-                      className={`text-xs px-2 py-1.5 rounded-lg font-medium flex-shrink-0 ${
-                        formSoal.kunci === huruf
-                          ? 'bg-green-500 text-white'
-                          : 'bg-gray-100 text-gray-500 hover:bg-green-50 hover:text-green-600'
-                      }`}
-                    >
-                      ✓
-                    </button>
-                  </div>
-                ))}
-                <p className="text-xs text-gray-400">Klik ✓ pada pilihan yang benar sebagai kunci jawaban.</p>
+                <div className="flex items-center justify-between">
+                  <label className="block text-sm font-medium text-gray-700">Pilihan Jawaban *</label>
+                  <span className="text-xs text-gray-400">{formSoal.opsi.length}/{MAKS_OPSI} opsi</span>
+                </div>
+                {formSoal.opsi.map((nilai, i) => {
+                  const huruf = labelHuruf(i)
+                  return (
+                    <div key={i} className="flex items-center gap-2">
+                      <span className={`w-7 h-7 rounded-lg text-xs font-bold flex items-center justify-center flex-shrink-0 ${
+                        formSoal.kunci === huruf ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-600'
+                      }`}>{huruf}</span>
+                      <input
+                        className="input-field text-sm flex-1 py-2"
+                        placeholder={`Pilihan ${huruf}`}
+                        value={nilai}
+                        onChange={e => updateOpsi(i, e.target.value)}
+                      />
+                      <button
+                        onClick={() => setFormSoal(p => ({ ...p, kunci: huruf }))}
+                        className={`text-xs px-2 py-1.5 rounded-lg font-medium flex-shrink-0 ${
+                          formSoal.kunci === huruf
+                            ? 'bg-green-500 text-white'
+                            : 'bg-gray-100 text-gray-500 hover:bg-green-50 hover:text-green-600'
+                        }`}
+                        title="Jadikan kunci jawaban"
+                      >
+                        ✓
+                      </button>
+                      <button
+                        onClick={() => hapusOpsi(i)}
+                        disabled={formSoal.opsi.length <= MIN_OPSI}
+                        className="text-xs px-2 py-1.5 rounded-lg font-medium flex-shrink-0 bg-red-50 text-red-500 hover:bg-red-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                        title="Hapus opsi ini"
+                      >
+                        🗑
+                      </button>
+                    </div>
+                  )
+                })}
+
+                <button
+                  onClick={tambahOpsi}
+                  disabled={formSoal.opsi.length >= MAKS_OPSI}
+                  className="w-full text-sm py-2 rounded-xl border-2 border-dashed border-gray-200 text-gray-500 hover:border-primary-300 hover:text-primary-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-gray-200 disabled:hover:text-gray-500"
+                >
+                  + Tambah Opsi
+                </button>
+
+                <p className="text-xs text-gray-400">Klik ✓ pada pilihan yang benar sebagai kunci jawaban. Minimal {MIN_OPSI} opsi.</p>
               </div>
             )}
 
@@ -386,6 +590,193 @@ export default function UjianDetailPage() {
               <button onClick={() => setShowForm(false)} className="btn-secondary flex-1">Batal</button>
               <button onClick={simpanSoal} disabled={savingSoal} className="btn-primary flex-1">
                 {savingSoal ? 'Menyimpan...' : editingSoalId ? 'Simpan Perubahan' : 'Tambah Soal'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal edit ujian */}
+      {showEditUjian && (
+        <div className="overlay animate-fade-in">
+          <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-gray-800">Edit Ujian</h3>
+              <button onClick={() => setShowEditUjian(false)} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Mata Kuliah *</label>
+              <select
+                className="input-field text-sm"
+                value={formUjian.matkul_id}
+                onChange={e => setFormUjian(p => ({ ...p, matkul_id: e.target.value }))}
+              >
+                <option value="">-- Pilih Mata Kuliah --</option>
+                {matkulList.map(m => (
+                  <option key={m.id} value={m.id}>{m.kode_matkul} — {m.nama_matkul}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Judul Ujian *</label>
+              <input
+                className="input-field text-sm"
+                value={formUjian.judul}
+                onChange={e => setFormUjian(p => ({ ...p, judul: e.target.value }))}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Deskripsi (opsional)</label>
+              <textarea
+                className="input-field text-sm min-h-[70px] resize-none"
+                value={formUjian.deskripsi}
+                onChange={e => setFormUjian(p => ({ ...p, deskripsi: e.target.value }))}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Durasi (menit) *</label>
+                <input
+                  type="number"
+                  className="input-field text-sm"
+                  min={10} max={300}
+                  value={formUjian.durasi_menit}
+                  onChange={e => setFormUjian(p => ({ ...p, durasi_menit: parseInt(e.target.value) || 90 }))}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Maks. Pelanggaran</label>
+                <input
+                  type="number"
+                  className="input-field text-sm"
+                  min={1} max={10}
+                  value={formUjian.maks_pelanggaran}
+                  onChange={e => setFormUjian(p => ({ ...p, maks_pelanggaran: parseInt(e.target.value) || 3 }))}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Kode Ujian *</label>
+              <input
+                className="input-field text-sm font-mono tracking-widest uppercase"
+                maxLength={8}
+                value={formUjian.kode_ujian}
+                onChange={e => setFormUjian(p => ({ ...p, kode_ujian: e.target.value.toUpperCase() }))}
+              />
+            </div>
+
+            <hr className="border-gray-100" />
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Prodi *</label>
+              <div className="flex gap-3">
+                {['agroteknologi', 'agribisnis'].map(p => (
+                  <button
+                    key={p}
+                    onClick={() => setFormUjian(prev => ({ ...prev, prodi_target: p, minat_target: [] }))}
+                    className={`px-4 py-2 rounded-xl text-sm font-medium border-2 transition-all capitalize ${
+                      formUjian.prodi_target === p
+                        ? 'border-primary-500 bg-primary-50 text-primary-700'
+                        : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Minat * (bisa pilih lebih dari satu)</label>
+              <div className="flex flex-wrap gap-2">
+                {minatOptionsUjian.map(m => (
+                  <button
+                    key={m}
+                    onClick={() => toggleArrUjian('minat_target', m)}
+                    className={`px-4 py-2 rounded-xl text-sm font-medium border-2 transition-all uppercase ${
+                      formUjian.minat_target.includes(m)
+                        ? 'border-primary-500 bg-primary-50 text-primary-700'
+                        : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                    }`}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Kelas (kosongkan = semua kelas)</label>
+              <div className="flex flex-wrap gap-2">
+                {KELAS_OPTIONS.map(k => (
+                  <button
+                    key={k}
+                    onClick={() => toggleArrUjian('kelas_target', k)}
+                    className={`w-10 h-9 rounded-xl text-sm font-bold border-2 transition-all ${
+                      formUjian.kelas_target.includes(k)
+                        ? 'border-primary-500 bg-primary-50 text-primary-700'
+                        : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                    }`}
+                  >
+                    {k}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Angkatan (kosongkan = semua angkatan)</label>
+              <div className="flex flex-wrap gap-2">
+                {angkatanOptions.map(a => (
+                  <button
+                    key={a}
+                    onClick={() => toggleAngkatanUjian(a)}
+                    className={`px-3 py-1.5 rounded-xl text-sm font-medium border-2 transition-all ${
+                      formUjian.angkatan_target.includes(a)
+                        ? 'border-primary-500 bg-primary-50 text-primary-700'
+                        : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                    }`}
+                  >
+                    {a}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <hr className="border-gray-100" />
+
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                className="w-4 h-4 accent-primary-600"
+                checked={formUjian.acak_soal}
+                onChange={e => setFormUjian(p => ({ ...p, acak_soal: e.target.checked }))}
+              />
+              <span className="text-sm text-gray-700">Acak urutan soal</span>
+            </label>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                className="w-4 h-4 accent-primary-600"
+                checked={formUjian.acak_pilihan}
+                onChange={e => setFormUjian(p => ({ ...p, acak_pilihan: e.target.checked }))}
+              />
+              <span className="text-sm text-gray-700">Acak pilihan jawaban</span>
+            </label>
+
+            {editUjianError && (
+              <p className="text-red-600 text-sm bg-red-50 rounded-xl px-4 py-3">⚠️ {editUjianError}</p>
+            )}
+
+            <div className="flex gap-3 pt-2">
+              <button onClick={() => setShowEditUjian(false)} className="btn-secondary flex-1">Batal</button>
+              <button onClick={simpanEditUjian} disabled={savingUjian} className="btn-primary flex-1">
+                {savingUjian ? 'Menyimpan...' : 'Simpan Perubahan'}
               </button>
             </div>
           </div>
