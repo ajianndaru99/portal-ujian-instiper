@@ -37,7 +37,7 @@ function extractParagraphs(xml: string): RawParagraph[] {
   const paragraphs: RawParagraph[] = []
 
   for (const block of paraBlocks) {
-    const textMatches = [...block.matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)]
+    const textMatches = Array.from(block.matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g))
     const text = textMatches.map(m => m[1]).join('').trim()
     if (!text) continue
 
