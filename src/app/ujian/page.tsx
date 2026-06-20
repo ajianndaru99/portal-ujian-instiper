@@ -65,6 +65,18 @@ export default function UjianPage() {
   const [sudahScrollAgreement, setSudahScrollAgreement] = useState(false)
   const [checkedAgreement, setCheckedAgreement] = useState(false)
   const agreementScrollRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+  if (!showAgreement) return
+  const cek = () => {
+    const el = agreementScrollRef.current
+    if (!el) return
+    const butuhScroll = el.scrollHeight - el.clientHeight > 32
+    if (!butuhScroll) setSudahScrollAgreement(true)
+  }
+  // beri waktu sedikit untuk memastikan layout sudah final
+  const t = setTimeout(cek, 100)
+  return () => clearTimeout(t)
+}, [showAgreement])
   // Menyimpan data sementara selama mahasiswa belum setuju
   const pendingDataRef = useRef<{
     sesiDB: any; soalFinal: Soal[]; soalDB: Soal[]
