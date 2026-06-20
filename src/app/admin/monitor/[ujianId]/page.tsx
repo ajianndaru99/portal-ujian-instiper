@@ -84,7 +84,11 @@ export default function MonitorDetailPage() {
           )
           setLastUpdate(new Date())
           // Flash highlight baris yang berubah
-          setFlashIds((prev) => new Set([...prev, payload.new.id as string]))
+          setFlashIds((prev) => {
+          const next = new Set(prev)
+          next.add(payload.new.id as string)
+          return next
+          })
           setTimeout(
             () => setFlashIds((prev) => { const next = new Set(prev); next.delete(payload.new.id as string); return next }),
             2000
