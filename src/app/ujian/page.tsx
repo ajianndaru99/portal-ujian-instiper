@@ -1,5 +1,5 @@
 'use client'
-
+ 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -9,9 +9,33 @@ import {
   simpanSesiLokal, ambilSesiLokal, simpanJawabanLokal,
   tandaiSudahSync, hitungJawabanBelumSync, acakArray, ambilHurufOpsi
 } from '@/lib/utils'
-
+ 
 type StatusPeringatan = 'idle' | 'peringatan1' | 'peringatan2' | 'peringatan3' | 'auto_submit'
-
+ 
+// ─── Poin pernyataan kejujuran ─────────────────────────────────────────────
+const POIN_AGREEMENT = [
+  {
+    judul: 'Kerjakan Sendiri',
+    isi: 'Ujian harus dikerjakan sendiri tanpa bantuan orang lain, joki, atau alat bantu tidak sah dalam bentuk apa pun.',
+  },
+  {
+    judul: 'Satu Tab, Satu Fokus',
+    isi: 'Dilarang membuka tab, aplikasi, atau perangkat lain untuk mencari jawaban selama ujian berlangsung.',
+  },
+  {
+    judul: 'Larangan Berbagi Soal',
+    isi: 'Soal dan jawaban tidak boleh difoto, direkam, atau disebarkan kepada mahasiswa lain dalam bentuk apa pun.',
+  },
+  {
+    judul: 'Pemantauan Otomatis',
+    isi: 'Sistem mencatat setiap perpindahan tab dan kehilangan fokus jendela secara otomatis selama ujian berlangsung.',
+  },
+  {
+    judul: 'Sanksi Akademik',
+    isi: 'Pelanggaran ketentuan ini dapat berakibat pembatalan nilai ujian hingga sanksi akademik sesuai peraturan INSTIPER Yogyakarta.',
+  },
+]
+ 
 export default function UjianPage() {
   const router = useRouter()
   const [sesi, setSesi] = useState<SesiUjian | null>(null)
@@ -35,9 +59,20 @@ export default function UjianPage() {
   const [showKonfirmasiSubmit, setShowKonfirmasiSubmit] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const sudahSubmitRef = useRef(false)
-
+ 
+  // ─── Agreement states (BARU) ───────────────────────────────────────────────
+  const [showAgreement, setShowAgreement] = useState(false)
+  const [sudahScrollAgreement, setSudahScrollAgreement] = useState(false)
+  const [checkedAgreement, setCheckedAgreement] = useState(false)
+  const agreementScrollRef = useRef<HTMLDivElement>(null)
+  // Menyimpan data sementara selama mahasiswa belum setuju
+  const pendingDataRef = useRef<{
+    sesiDB: any; soalFinal: Soal[]; soalDB: Soal[]
+    jawabanMap: Record<string, string>; ujian: any; mahasiswa: any; token: string
+  } | null>(null)
+ 
   useEffect(() => { loadUjian() }, [])
-
+ 
   async function loadUjian() {
     try {
       const token = sessionStorage.getItem('sesi_token')
@@ -69,18 +104,28 @@ export default function UjianPage() {
           await supabase.from('sesi_ujian').update({ urutan_soal: soalFinal.map((s) => s.id) }).eq('id', sesiDB.id)
         }
       }
-      if (sesiDB.status === 'belum_mulai') {
-        await supabase.from('sesi_ujian').update({ status: 'mengerjakan', waktu_mulai: new Date().toISOString() }).eq('id', sesiDB.id)
-        sesiDB.status = 'mengerjakan'
-        sesiDB.waktu_mulai = new Date().toISOString()
-      }
+ 
+      // Muat jawaban terlebih dahulu (berlaku untuk semua status)
       const { data: jawabanDB } = await supabase.from('jawaban').select('soal_id, jawaban_mahasiswa').eq('sesi_id', sesiDB.id)
       const jawabanMap: Record<string, string> = {}
       jawabanDB?.forEach((j) => { if (j.jawaban_mahasiswa) jawabanMap[j.soal_id] = j.jawaban_mahasiswa })
       const sesiLokal = ambilSesiLokal()
       if (sesiLokal && sesiLokal.sesi_id === sesiDB.id) {
-        Object.entries(sesiLokal.jawaban).forEach(([soal_id, data]) => { if (data.jawaban) jawabanMap[soal_id] = data.jawaban })
+        Object.entries(sesiLokal.jawaban).forEach(([soal_id, data]) => { if ((data as any).jawaban) jawabanMap[soal_id] = (data as any).jawaban })
       }
+ 
+      // ── BARU: Jika belum mulai, tahan dulu di halaman pernyataan ──────────
+      if (sesiDB.status === 'belum_mulai') {
+        pendingDataRef.current = {
+          sesiDB, soalFinal, soalDB: soalDB as Soal[],
+          jawabanMap, ujian, mahasiswa, token
+        }
+        setShowAgreement(true)
+        return // timer BELUM jalan, status BELUM berubah di DB
+      }
+      // ──────────────────────────────────────────────────────────────────────
+ 
+      // Status 'mengerjakan': mahasiswa kembali setelah refresh/reconnect
       if (!sesiLokal || sesiLokal.sesi_id !== sesiDB.id) {
         simpanSesiLokal({ sesi_id: sesiDB.id, token_sesi: token, ujian_id: ujian.id, nim: mahasiswa.nim,
           waktu_mulai: new Date(sesiDB.waktu_mulai).getTime(), jawaban: {}, jumlah_pelanggaran: sesiDB.jumlah_pelanggaran, last_sync: Date.now() })
@@ -94,7 +139,36 @@ export default function UjianPage() {
       setLoading(false)
     } catch (err) { console.error(err); alert('Gagal memuat ujian. Hubungi pengawas.') }
   }
-
+ 
+  // ─── BARU: Dipanggil setelah mahasiswa centang & konfirmasi ───────────────
+  async function handleSetuju() {
+    if (!pendingDataRef.current || !checkedAgreement) return
+    const { sesiDB, soalFinal, soalDB, jawabanMap, ujian, mahasiswa, token } = pendingDataRef.current
+    try {
+      const waktuMulai = new Date().toISOString()
+      await supabase.from('sesi_ujian')
+        .update({ status: 'mengerjakan', waktu_mulai: waktuMulai })
+        .eq('id', sesiDB.id)
+      sesiDB.status = 'mengerjakan'
+      sesiDB.waktu_mulai = waktuMulai
+      simpanSesiLokal({
+        sesi_id: sesiDB.id, token_sesi: token, ujian_id: ujian.id, nim: mahasiswa.nim,
+        waktu_mulai: new Date(waktuMulai).getTime(), jawaban: {}, jumlah_pelanggaran: 0, last_sync: Date.now()
+      })
+      setSesi({ ...sesiDB, ujian, mahasiswa })
+      setSoalList(soalDB)
+      setSoalTerurut(soalFinal)
+      setJawabanState(jawabanMap)
+      setPelanggaranCount(0)
+      setSisaDetik(ujian.durasi_menit * 60) // mulai dari durasi penuh
+      setShowAgreement(false)
+      setLoading(false) // ← baru di sini timer & anti-cheat listener aktif
+    } catch (err) {
+      console.error(err)
+      alert('Gagal memulai ujian. Hubungi pengawas.')
+    }
+  }
+ 
   useEffect(() => {
     async function requestWakeLock() {
       try { if ('wakeLock' in navigator) wakeLockRef.current = await (navigator as any).wakeLock.request('screen') } catch (e) {}
@@ -104,7 +178,7 @@ export default function UjianPage() {
     document.addEventListener('visibilitychange', fn)
     return () => { document.removeEventListener('visibilitychange', fn); wakeLockRef.current?.release() }
   }, [])
-
+ 
   useEffect(() => {
     if (loading || !sesi) return
     timerRef.current = setInterval(() => {
@@ -112,13 +186,13 @@ export default function UjianPage() {
     }, 1000)
     return () => clearInterval(timerRef.current!)
   }, [loading, sesi])
-
+ 
   useEffect(() => {
     if (loading || !sesi) return
     syncTimerRef.current = setInterval(() => { syncJawaban() }, 15000)
     return () => clearInterval(syncTimerRef.current!)
   }, [loading, sesi, jawabanState])
-
+ 
   const syncJawaban = useCallback(async () => {
     if (isSyncingRef.current || !sesi) return
     isSyncingRef.current = true
@@ -132,13 +206,13 @@ export default function UjianPage() {
       if (!error) tandaiSudahSync(sesiLokal, belumSync)
     } catch (e) { console.error('Sync gagal:', e) } finally { isSyncingRef.current = false }
   }, [sesi])
-
+ 
   const resetIdleTimer = useCallback(() => {
     setShowIdlePopup(false)
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
     idleTimerRef.current = setTimeout(() => { setShowIdlePopup(true) }, IDLE_TIMEOUT)
   }, [])
-
+ 
   useEffect(() => {
     if (loading) return
     const events = ['touchstart', 'touchmove', 'click', 'keydown']
@@ -146,7 +220,7 @@ export default function UjianPage() {
     resetIdleTimer()
     return () => { events.forEach((e) => window.removeEventListener(e, resetIdleTimer)); if (idleTimerRef.current) clearTimeout(idleTimerRef.current) }
   }, [loading, resetIdleTimer])
-
+ 
   useEffect(() => {
     if (loading || !sesi) return
     async function handlePelanggaran(tipe: 'pindah_tab' | 'blur_app') {
@@ -168,18 +242,18 @@ export default function UjianPage() {
     window.addEventListener('blur', onBlur)
     return () => { document.removeEventListener('visibilitychange', onVisibility); window.removeEventListener('blur', onBlur) }
   }, [loading, sesi, syncJawaban, router])
-
+ 
   function handleJawab(soalId: string, jawaban: string) {
     setJawabanState((prev) => ({ ...prev, [soalId]: jawaban }))
     resetIdleTimer()
     const sesiLokal = ambilSesiLokal()
     if (sesiLokal) simpanJawabanLokal(sesiLokal, soalId, jawaban)
   }
-
+ 
   function handleNavigasiSoal(indeks: number) {
     setIndeksSoalAktif(indeks); resetIdleTimer(); window.scrollTo({ top: 0, behavior: 'smooth' })
   }
-
+ 
   async function handleAutoSubmitWaktu() {
     if (sudahSubmitRef.current) return
     sudahSubmitRef.current = true
@@ -187,7 +261,7 @@ export default function UjianPage() {
     await supabase.rpc('submit_ujian', { p_sesi_id: sesi!.id })
     router.replace('/selesai')
   }
-
+ 
   async function handleSubmitManual() {
     if (submitting || sudahSubmitRef.current) return
     setSubmitting(true); sudahSubmitRef.current = true
@@ -198,7 +272,88 @@ export default function UjianPage() {
       router.replace('/selesai')
     } catch (err) { console.error(err); alert('Gagal submit. Coba lagi atau hubungi pengawas.'); setSubmitting(false); sudahSubmitRef.current = false }
   }
-
+ 
+  // ─── BARU: Halaman pernyataan (muncul sebelum ujian dimulai) ──────────────
+  if (showAgreement && pendingDataRef.current) {
+    const { ujian, mahasiswa } = pendingDataRef.current
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        {/* Header */}
+        <div className="bg-white border-b border-gray-100 shadow-sm px-4 py-4">
+          <p className="text-xs text-gray-400">INSTIPER Yogyakarta — FAPERTA</p>
+          <p className="text-sm font-semibold text-gray-800 mt-0.5 truncate">{ujian?.judul}</p>
+          <p className="text-xs text-gray-500 mt-0.5 truncate">{ujian?.mata_kuliah?.nama_matkul} • {mahasiswa?.nama}</p>
+        </div>
+ 
+        <div className="flex-1 px-4 py-5 flex flex-col gap-4 overflow-hidden">
+          {/* Ikon + judul */}
+          <div className="card text-center pt-6 pb-5">
+            <div className="w-14 h-14 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-3">
+              <svg className="w-7 h-7 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                <path strokeLinecap="round" strokeLinejoin="round"
+                  d="M12 9v3.75m0 3.75h.008M10.29 3.86l-8.18 14.18A1.5 1.5 0 0 0 3.4 20.5h17.2a1.5 1.5 0 0 0 1.3-2.46L13.71 3.86a1.5 1.5 0 0 0-2.42 0Z" />
+              </svg>
+            </div>
+            <h1 className="text-base font-bold text-gray-800">Pernyataan Kejujuran Akademik</h1>
+            <p className="text-xs text-gray-500 mt-1">Gulir & baca seluruh ketentuan sebelum memulai ujian</p>
+          </div>
+ 
+          {/* Daftar poin — scrollable, trigger saat sampai bawah */}
+          <div className="card flex-1 flex flex-col p-0 overflow-hidden min-h-0">
+            <div
+              ref={agreementScrollRef}
+              onScroll={() => {
+                const el = agreementScrollRef.current
+                if (!el || sudahScrollAgreement) return
+                if (el.scrollHeight - el.scrollTop - el.clientHeight < 32) setSudahScrollAgreement(true)
+              }}
+              className="flex-1 overflow-y-auto px-5 py-4 space-y-4"
+            >
+              {POIN_AGREEMENT.map((poin, i) => (
+                <div key={poin.judul} className="flex gap-3">
+                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-600 mt-0.5">
+                    {i + 1}
+                  </span>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800">{poin.judul}</p>
+                    <p className="text-sm text-gray-500 leading-relaxed mt-0.5">{poin.isi}</p>
+                  </div>
+                </div>
+              ))}
+              {!sudahScrollAgreement && (
+                <p className="text-center text-xs text-gray-400 pt-1 animate-pulse">
+                  Gulir ke bawah untuk melanjutkan ↓
+                </p>
+              )}
+            </div>
+          </div>
+ 
+          {/* Checkbox + tombol */}
+          <div className="card space-y-4">
+            <label className={`flex items-start gap-3 text-sm ${sudahScrollAgreement ? 'text-gray-700 cursor-pointer' : 'text-gray-400 pointer-events-none'}`}>
+              <input
+                type="checkbox"
+                disabled={!sudahScrollAgreement}
+                checked={checkedAgreement}
+                onChange={(e) => setCheckedAgreement(e.target.checked)}
+                className="mt-0.5 w-4 h-4 accent-primary-600 disabled:opacity-40 flex-shrink-0"
+              />
+              <span>Saya telah membaca, memahami, dan bersedia mematuhi seluruh ketentuan di atas serta menerima konsekuensinya.</span>
+            </label>
+            <button
+              disabled={!checkedAgreement}
+              onClick={handleSetuju}
+              className="btn-primary w-full py-3 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Saya Setuju, Mulai Ujian
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+ 
+  // ─── Loading spinner (sama seperti aslinya) ────────────────────────────────
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-gray-50">
@@ -207,16 +362,16 @@ export default function UjianPage() {
       </div>
     )
   }
-
+ 
   if (!sesi || soalTerurut.length === 0) return null
-
+ 
   const soalAktif = soalTerurut[indeksSoalAktif]
   const totalSoal = soalTerurut.length
   const totalTerjawab = Object.keys(jawabanState).filter((id) => soalTerurut.some((s) => s.id === id)).length
   const isTimerWarning = sisaDetik <= 300
   const ujianData = sesi.ujian as any
   const mahasiswaData = sesi.mahasiswa as any
-
+ 
   return (
     <div
       className="min-h-screen bg-gray-50 flex flex-col relative"
@@ -226,7 +381,7 @@ export default function UjianPage() {
       onCut={e => e.preventDefault()}
     >
       <div className="watermark" aria-hidden="true">{mahasiswaData?.nim} • {mahasiswaData?.nama}</div>
-
+ 
       {/* HEADER */}
       <div className="sticky top-0 z-20 bg-white border-b border-gray-100 shadow-sm">
         <div className="px-4 py-3">
@@ -262,7 +417,7 @@ export default function UjianPage() {
           </div>
         </div>
       </div>
-
+ 
       {/* KONTEN SOAL */}
       <div className="flex-1 px-4 py-5 pb-32">
         <div className="card animate-fade-in" key={soalAktif.id}>
@@ -272,11 +427,9 @@ export default function UjianPage() {
               {soalAktif.tipe === 'pg' ? 'Pilihan Ganda' : 'Esai'}
             </span>
           </div>
-
           <div className="text-gray-800 text-base leading-relaxed mb-5 font-medium" style={{ pointerEvents: 'none' }}>
             {soalAktif.pertanyaan}
           </div>
-
           {soalAktif.tipe === 'pg' && soalAktif.opsi_jawaban && (
             <div className="space-y-3">
               {soalAktif.opsi_jawaban.map((opsi, idx) => {
@@ -294,7 +447,6 @@ export default function UjianPage() {
               })}
             </div>
           )}
-
           {soalAktif.tipe === 'esai' && (
             <textarea
               className="input-field min-h-[140px] resize-none text-sm leading-relaxed"
@@ -307,7 +459,7 @@ export default function UjianPage() {
           )}
         </div>
       </div>
-
+ 
       {/* NAVIGASI BAWAH */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 px-4 py-4 z-20">
         <div className="flex items-center gap-3">
@@ -323,7 +475,7 @@ export default function UjianPage() {
           )}
         </div>
       </div>
-
+ 
       {/* POPUP IDLE */}
       {showIdlePopup && (
         <div className="overlay animate-fade-in">
@@ -335,7 +487,7 @@ export default function UjianPage() {
           </div>
         </div>
       )}
-
+ 
       {/* POPUP PERINGATAN */}
       {showPeringatan && statusPeringatan !== 'idle' && statusPeringatan !== 'auto_submit' && (
         <div className="overlay animate-fade-in">
@@ -358,7 +510,7 @@ export default function UjianPage() {
           </div>
         </div>
       )}
-
+ 
       {/* POPUP AUTO-SUBMIT */}
       {statusPeringatan === 'auto_submit' && (
         <div className="overlay">
@@ -370,7 +522,7 @@ export default function UjianPage() {
           </div>
         </div>
       )}
-
+ 
       {/* POPUP KONFIRMASI KIRIM */}
       {showKonfirmasiSubmit && (
         <div className="overlay animate-fade-in">
