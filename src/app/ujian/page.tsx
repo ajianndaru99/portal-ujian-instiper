@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { createClientMahasiswa } from '@/lib/supabase-mahasiswa'
 import { Soal, SesiUjian } from '@/lib/types'
 import {
   formatDurasi, hitungSisaDetik,
@@ -88,9 +89,11 @@ export default function UjianPage() {
   async function loadUjian() {
     try {
       const token = sessionStorage.getItem('sesi_token')
+      if (!token) { router.replace('/'); return }
+      const supabase = createClientMahasiswa(token)
       const mahasiswaData = sessionStorage.getItem('mahasiswa_data')
       const ujianData = sessionStorage.getItem('ujian_data')
-      if (!token || !mahasiswaData || !ujianData) { router.replace('/'); return }
+      if (!mahasiswaData || !ujianData) { router.replace('/'); return }
       const mahasiswa = JSON.parse(mahasiswaData)
       const ujian = JSON.parse(ujianData)
       const { data: sesiDB, error: errSesi } = await supabase.from('sesi_ujian').select('*').eq('token_sesi', token).single()
