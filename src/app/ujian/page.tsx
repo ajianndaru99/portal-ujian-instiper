@@ -234,26 +234,53 @@ export default function UjianPage() {
   }, [loading, resetIdleTimer])
  
   useEffect(() => {
-    if (loading || !sesi) return
-    async function handlePelanggaran(tipe: 'pindah_tab' | 'blur_app') {
-      if (sudahSubmitRef.current) return
-      waktuKembaliRef.current = Date.now()
-      try {
-        const { data } = await supabase.rpc('catat_pelanggaran', { p_sesi_id: sesi!.id, p_tipe: tipe, p_keterangan: tipe === 'pindah_tab' ? 'Tab berpindah' : 'Browser blur' })
-        if (!data) return
-        const jumlah = data.jumlah_pelanggaran as number
-        const autoSubmit = data.auto_submit as boolean
-        setPelanggaranCount(jumlah)
-        if (autoSubmit) { setStatusPeringatan('auto_submit'); setShowPeringatan(true); sudahSubmitRef.current = true; await syncJawaban(); setTimeout(() => router.replace('/selesai'), 3000) }
-        else { setStatusPeringatan(jumlah === 1 ? 'peringatan1' : jumlah === 2 ? 'peringatan2' : 'peringatan3'); setShowPeringatan(true) }
-      } catch (e) { console.error(e) }
-    }
-    const onVisibility = () => { if (document.visibilityState === 'hidden') handlePelanggaran('pindah_tab') }
-    const onBlur = () => { if (document.visibilityState === 'visible') handlePelanggaran('blur_app') }
-    document.addEventListener('visibilitychange', onVisibility)
-    window.addEventListener('blur', onBlur)
-    return () => { document.removeEventListener('visibilitychange', onVisibility); window.removeEventListener('blur', onBlur) }
-  }, [loading, sesi, syncJawaban, router])
+  if (loading || !sesi) return
+
+  // Mencatat waktu kejadian terakhir agar pindah_tab & blur_app yang terpicu
+  // nyaris bersamaan (akibat satu aksi nyata: membuka tab/app lain) tidak
+  // dihitung sebagai dua pelanggaran terpisah. Browser sering memicu kedua
+  // event ini bersamaan saat tab baru dibuka.
+  const DEBOUNCE_MS = 800
+
+  async function kirimPelanggaran(tipe: 'pindah_tab' | 'blur_app') {
+    if (sudahSubmitRef.current) return
+    waktuKembaliRef.current = Date.now()
+    try {
+      const { data } = await supabase.rpc('catat_pelanggaran', { p_sesi_id: sesi!.id, p_tipe: tipe, p_keterangan: tipe === 'pindah_tab' ? 'Tab berpindah' : 'Browser blur' })
+      if (!data) return
+      const jumlah = data.jumlah_pelanggaran as number
+      const autoSubmit = data.auto_submit as boolean
+      setPelanggaranCount(jumlah)
+      if (autoSubmit) { setStatusPeringatan('auto_submit'); setShowPeringatan(true); sudahSubmitRef.current = true; await syncJawaban(); setTimeout(() => router.replace('/selesai'), 3000) }
+      else { setStatusPeringatan(jumlah === 1 ? 'peringatan1' : jumlah === 2 ? 'peringatan2' : 'peringatan3'); setShowPeringatan(true) }
+    } catch (e) { console.error(e) }
+  }
+
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null
+  let pendingTipe: 'pindah_tab' | 'blur_app' | null = null
+
+  function handlePelanggaran(tipe: 'pindah_tab' | 'blur_app') {
+    // Event pertama dalam window debounce yang menang; event kedua (apapun
+    // tipenya) yang datang dalam DEBOUNCE_MS dianggap gema dari aksi yang sama.
+    if (debounceTimer) return
+    pendingTipe = tipe
+    debounceTimer = setTimeout(() => {
+      if (pendingTipe) kirimPelanggaran(pendingTipe)
+      debounceTimer = null
+      pendingTipe = null
+    }, DEBOUNCE_MS)
+  }
+
+  const onVisibility = () => { if (document.visibilityState === 'hidden') handlePelanggaran('pindah_tab') }
+  const onBlur = () => { if (document.visibilityState === 'visible') handlePelanggaran('blur_app') }
+  document.addEventListener('visibilitychange', onVisibility)
+  window.addEventListener('blur', onBlur)
+  return () => {
+    document.removeEventListener('visibilitychange', onVisibility)
+    window.removeEventListener('blur', onBlur)
+    if (debounceTimer) clearTimeout(debounceTimer)
+  }
+}, [loading, sesi, syncJawaban, router])
  
   function handleJawab(soalId: string, jawaban: string) {
     setJawabanState((prev) => ({ ...prev, [soalId]: jawaban }))
