@@ -106,7 +106,7 @@
   }
   .soal-pill-kosong  { @apply bg-gray-100 text-gray-500 hover:bg-gray-200; }
   .soal-pill-terjawab { @apply bg-primary-100 text-primary-700 hover:bg-primary-200; }
-  .soal-pill-aktif   { @apply bg-primary-600 text-white ring-2 ring-primary-400 ring-offset-1; }
+  .soal-pill-aktif   { @apply bg-primary-600 text-white ring-2 ring-primary-400; }
 
   /* Badges */
   .badge { @apply inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium; }

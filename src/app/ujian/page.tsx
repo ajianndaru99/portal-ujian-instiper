@@ -414,7 +414,7 @@ export default function UjianPage() {
             <span className="text-xs text-gray-500 flex-shrink-0">{totalTerjawab}/{totalSoal}</span>
           </div>
         </div>
-        <div className="px-4 pb-3 overflow-x-auto">
+        <div className="px-4 pb-3 pt-1 overflow-x-auto">
           <div className="flex gap-2">
             {soalTerurut.map((soal, idx) => {
               const terjawab = !!jawabanState[soal.id]

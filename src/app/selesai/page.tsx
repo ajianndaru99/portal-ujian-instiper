@@ -164,15 +164,6 @@ export default function SelesaiPage() {
           </div>
         )}
 
-        {/* Nilai PG */}
-        {hasil?.nilai_pg !== null && hasil?.nilai_pg !== undefined && (
-          <div className="card text-center">
-            <p className="text-xs text-gray-400 mb-1">Nilai Pilihan Ganda</p>
-            <p className="text-5xl font-bold text-primary-600">{Number(hasil.nilai_pg).toFixed(1)}</p>
-            <p className="text-sm text-gray-400 mt-0.5">dari 100</p>
-          </div>
-        )}
-
         {/* Info esai */}
         {hasil?.ada_esai && (
           <div className="card text-center bg-amber-50 border-amber-200">
