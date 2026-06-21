@@ -1,0 +1,38 @@
+name: Keep Supabase Alive
+
+# Mencegah project Supabase Free tier auto-pause setelah 7 hari tanpa
+# request. Workflow ini melakukan query ringan (SELECT 1 baris dari
+# tabel kecil) setiap 5 hari, memberi margin aman sebelum batas 7 hari
+# tercapai — termasuk toleransi kalau sesekali run gagal/terlewat.
+#
+# Kenapa query ke tabel, bukan sekadar ping endpoint root:
+# Supabase menghitung "aktivitas" dari request yang benar-benar
+# menyentuh API/database, bukan dari ping jaringan biasa. Query
+# REST sederhana ke PostgREST adalah cara paling pasti untuk
+# dihitung sebagai aktivitas nyata oleh sistem auto-pause Supabase.
+
+on:
+  schedule:
+    # Jam 03:00 UTC = 10:00 WIB, setiap 5 hari sekali
+    - cron: '0 3 */5 * *'
+  workflow_dispatch: {} # supaya bisa dites manual kapan saja lewat tab Actions
+
+jobs:
+  ping-supabase:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST API
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" \
+            "${{ secrets.SUPABASE_URL }}/rest/v1/dosen?select=id&limit=1" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}")
+
+          echo "HTTP status: $response"
+
+          if [ "$response" -ne 200 ]; then
+            echo "::error::Ping gagal, status code: $response"
+            exit 1
+          fi
+
+          echo "Ping berhasil, Supabase tetap aktif."
