@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { createClientMahasiswa } from '@/lib/supabase-mahasiswa'
 import { hapusSesiLokal, nilaiKeHuruf } from '@/lib/utils'
 
 interface HasilUjian {
@@ -45,6 +45,10 @@ export default function SelesaiPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    // Token diambil SEBELUM sessionStorage.clear() di bawah, karena
+    // setelah di-clear token tidak akan bisa diambil lagi. Token ini
+    // wajib disertakan sebagai header pada Supabase client agar lolos
+    // RLS policy "... dengan token valid" di tabel sesi_ujian.
     const token = sessionStorage.getItem('sesi_token')
     loadHasil(token)
     hapusSesiLokal()
@@ -54,6 +58,7 @@ export default function SelesaiPage() {
   async function loadHasil(token: string | null) {
     if (!token) { setLoading(false); return }
     try {
+      const supabase = createClientMahasiswa(token)
       const { data: sesi } = await supabase
         .from('sesi_ujian')
         .select(`
