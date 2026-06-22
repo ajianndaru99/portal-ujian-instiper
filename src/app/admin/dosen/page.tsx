@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import ImportDosenModal from './ImportDosenModal'
 
 interface Dosen { id: string; kode_dosen: string; nama: string; email: string | null; is_active: boolean }
 
@@ -12,6 +13,7 @@ export default function AdminDosenPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [showForm, setShowForm] = useState(false)
+  const [showImport, setShowImport] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState({ ...EMPTY_FORM })
   const [saving, setSaving] = useState(false)
@@ -68,7 +70,7 @@ export default function AdminDosenPage() {
           <p className="text-sm text-gray-400">{list.length} dosen terdaftar</p>
         </div>
         <div className="flex gap-2">
-          <a href="/admin/import" className="btn-secondary text-sm px-4 py-2.5">📥 Import CSV</a>
+          <button onClick={() => setShowImport(true)} className="btn-secondary text-sm px-4 py-2.5">📥 Import Data</button>
           <button onClick={bukaFormBaru} className="btn-primary text-sm px-4 py-2.5">+ Tambah</button>
         </div>
       </div>
@@ -148,6 +150,13 @@ export default function AdminDosenPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {showImport && (
+        <ImportDosenModal
+          onClose={() => setShowImport(false)}
+          onSuccess={() => { setShowImport(false); loadData() }}
+        />
       )}
     </div>
   )

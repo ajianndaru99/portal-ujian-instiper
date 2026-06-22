@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import ImportMahasiswaModal from './ImportMahasiswaModal'
 
 interface Mahasiswa {
   nim: string
@@ -32,6 +33,7 @@ export default function AdminMahasiswaPage() {
   const [filterAngkatan, setFilterAngkatan] = useState('semua')
 
   const [showForm, setShowForm] = useState(false)
+  const [showImport, setShowImport] = useState(false)
   const [editingNim, setEditingNim] = useState<string | null>(null)
   const [form, setForm] = useState({ ...EMPTY_FORM })
   const [saving, setSaving] = useState(false)
@@ -111,7 +113,7 @@ export default function AdminMahasiswaPage() {
           <p className="text-sm text-gray-400">{list.length} mahasiswa terdaftar</p>
         </div>
         <div className="flex gap-2">
-          <a href="/admin/import" className="btn-secondary text-sm px-4 py-2.5">📥 Import CSV</a>
+          <button onClick={() => setShowImport(true)} className="btn-secondary text-sm px-4 py-2.5">📥 Import Data</button>
           <button onClick={bukaFormBaru} className="btn-primary text-sm px-4 py-2.5">+ Tambah</button>
         </div>
       </div>
@@ -184,7 +186,7 @@ export default function AdminMahasiswaPage() {
         </div>
       )}
 
-      {/* Modal form */}
+      {/* Modal form tambah/edit */}
       {showForm && (
         <div className="overlay animate-fade-in">
           <div className="bg-white rounded-2xl w-full max-w-md p-5 space-y-4">
@@ -225,7 +227,7 @@ export default function AdminMahasiswaPage() {
                 <label className="text-xs font-medium text-gray-600 mb-1 block">Kelas</label>
                 <select className="input-field text-sm" value={form.kelas}
                   onChange={e => setForm(p => ({ ...p, kelas: e.target.value }))}>
-                  {['A','B','C','D'].map(k => <option key={k} value={k}>Kelas {k}</option>)}
+                  {['A','B','C','D','E','F','G','H','I','J','K','L'].map(k => <option key={k} value={k}>Kelas {k}</option>)}
                 </select>
               </div>
               <div>
@@ -243,6 +245,14 @@ export default function AdminMahasiswaPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal import */}
+      {showImport && (
+        <ImportMahasiswaModal
+          onClose={() => setShowImport(false)}
+          onSuccess={() => { setShowImport(false); loadData() }}
+        />
       )}
     </div>
   )
