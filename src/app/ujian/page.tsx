@@ -1,8 +1,7 @@
 'use client'
- 
+
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
 import { createClientMahasiswa } from '@/lib/supabase-mahasiswa'
 import { Soal, SesiUjian } from '@/lib/types'
 import {
@@ -10,9 +9,9 @@ import {
   simpanSesiLokal, ambilSesiLokal, simpanJawabanLokal,
   tandaiSudahSync, hitungJawabanBelumSync, acakArray, ambilHurufOpsi
 } from '@/lib/utils'
- 
+
 type StatusPeringatan = 'idle' | 'peringatan1' | 'peringatan2' | 'peringatan3' | 'auto_submit'
- 
+
 const POIN_AGREEMENT = [
   {
     judul: 'Kerjakan Sendiri',
@@ -35,9 +34,18 @@ const POIN_AGREEMENT = [
     isi: 'Pelanggaran ketentuan ini dapat berakibat pembatalan nilai ujian hingga sanksi akademik sesuai peraturan INSTIPER Yogyakarta.',
   },
 ]
- 
+
 export default function UjianPage() {
   const router = useRouter()
+
+  // PERBAIKAN: satu instance client Supabase mahasiswa (dengan x-sesi-token)
+  // disimpan di ref dan dipakai konsisten di SELURUH fungsi pada halaman ini.
+  // Tidak ada lagi import/penggunaan client anon global ('@/lib/supabase')
+  // di halaman ujian, karena itulah yang menyebabkan RPC catat_pelanggaran
+  // / submit_ujian terkadang dipanggil tanpa konteks token sesi yang benar
+  // dan memicu konflik GoTrueClient (warning "Multiple GoTrueClient instances").
+  const supabaseRef = useRef<ReturnType<typeof createClientMahasiswa> | null>(null)
+
   const [sesi, setSesi] = useState<SesiUjian | null>(null)
   const [soalList, setSoalList] = useState<Soal[]>([])
   const [soalTerurut, setSoalTerurut] = useState<Soal[]>([])
@@ -46,24 +54,24 @@ export default function UjianPage() {
   const [loading, setLoading] = useState(true)
   const [sisaDetik, setSisaDetik] = useState(0)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
-  
+
   const [statusPeringatan, setStatusPeringatan] = useState<StatusPeringatan>('idle')
   const [pelanggaranCount, setPelanggaranCount] = useState(0)
   const [showPeringatan, setShowPeringatan] = useState(false)
   const waktuKembaliRef = useRef<number | null>(null)
-  
+
   const [showIdlePopup, setShowIdlePopup] = useState(false)
   const idleTimerRef = useRef<NodeJS.Timeout | null>(null)
   const IDLE_TIMEOUT = 90000
-  
+
   const syncTimerRef = useRef<NodeJS.Timeout | null>(null)
   const isSyncingRef = useRef(false)
   const wakeLockRef = useRef<WakeLockSentinel | null>(null)
-  
+
   const [showKonfirmasiSubmit, setShowKonfirmasiSubmit] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const sudahSubmitRef = useRef(false)
- 
+
   const [showAgreement, setShowAgreement] = useState(false)
   const [sudahScrollAgreement, setSudahScrollAgreement] = useState(false)
   const [checkedAgreement, setCheckedAgreement] = useState(false)
@@ -85,37 +93,43 @@ export default function UjianPage() {
     sesiDB: any; soalFinal: Soal[]; soalDB: Soal[]
     jawabanMap: Record<string, string>; ujian: any; mahasiswa: any; token: string
   } | null>(null)
- 
+
   useEffect(() => { loadUjian() }, [])
- 
+
   async function loadUjian() {
     try {
       const token = sessionStorage.getItem('sesi_token')
       if (!token) { router.replace('/'); return }
-      const supabase = createClientMahasiswa(token)
+
+      // Buat SATU client mahasiswa dan simpan di ref agar bisa dipakai
+      // oleh semua fungsi lain di halaman ini (kirimPelanggaran, syncJawaban,
+      // handleSetuju, handleSubmitManual, handleAutoSubmitWaktu, dst).
+      const sb = createClientMahasiswa(token)
+      supabaseRef.current = sb
+
       const mahasiswaData = sessionStorage.getItem('mahasiswa_data')
       const ujianData = sessionStorage.getItem('ujian_data')
       if (!mahasiswaData || !ujianData) { router.replace('/'); return }
       const mahasiswa = JSON.parse(mahasiswaData)
       const ujian = JSON.parse(ujianData)
-      
-      const { data: sesiDB, error: errSesi } = await supabase.from('sesi_ujian').select('*').eq('token_sesi', token).single()
+
+      const { data: sesiDB, error: errSesi } = await sb.from('sesi_ujian').select('*').eq('token_sesi', token).single()
       if (errSesi || !sesiDB) { router.replace('/'); return }
       if (['selesai', 'auto_submit', 'paksa_submit'].includes(sesiDB.status)) { router.replace('/selesai'); return }
-      
-      const { data: soalDBRaw, error: errSoal } = await supabase
+
+      const { data: soalDBRaw, error: errSoal } = await sb
         .from('soal').select('id, ujian_id, nomor_urut, pertanyaan, tipe, opsi_jawaban, bobot_nilai')
         .eq('ujian_id', ujian.id).order('nomor_urut')
-      
+
       if (errSoal || !soalDBRaw) throw new Error('Gagal memuat soal')
-      
+
       const soalDB = soalDBRaw.map((s: any) => ({
         ...s,
         opsi_jawaban: Array.isArray(s.opsi_jawaban)
           ? s.opsi_jawaban
           : (typeof s.opsi_jawaban === 'string' ? (() => { try { return JSON.parse(s.opsi_jawaban) } catch { return null } })() : s.opsi_jawaban),
       }))
-      
+
       let soalFinal = soalDB as Soal[]
       if (ujian.acak_soal) {
         if (sesiDB.urutan_soal && sesiDB.urutan_soal.length > 0) {
@@ -123,19 +137,19 @@ export default function UjianPage() {
           soalFinal = urutanId.map((id: string) => soalDB.find((s) => s.id === id)).filter(Boolean) as Soal[]
         } else {
           soalFinal = acakArray(soalDB as Soal[])
-          await supabase.from('sesi_ujian').update({ urutan_soal: soalFinal.map((s) => s.id) }).eq('id', sesiDB.id)
+          await sb.from('sesi_ujian').update({ urutan_soal: soalFinal.map((s) => s.id) }).eq('id', sesiDB.id)
         }
       }
- 
-      const { data: jawabanDB } = await supabase.from('jawaban').select('soal_id, jawaban_mahasiswa').eq('sesi_id', sesiDB.id)
+
+      const { data: jawabanDB } = await sb.from('jawaban').select('soal_id, jawaban_mahasiswa').eq('sesi_id', sesiDB.id)
       const jawabanMap: Record<string, string> = {}
       jawabanDB?.forEach((j) => { if (j.jawaban_mahasiswa) jawabanMap[j.soal_id] = j.jawaban_mahasiswa })
-      
+
       const sesiLokal = ambilSesiLokal()
       if (sesiLokal && sesiLokal.sesi_id === sesiDB.id) {
         Object.entries(sesiLokal.jawaban).forEach(([soal_id, data]) => { if ((data as any).jawaban) jawabanMap[soal_id] = (data as any).jawaban })
       }
- 
+
       if (sesiDB.status === 'belum_mulai') {
         pendingDataRef.current = {
           sesiDB, soalFinal, soalDB: soalDB as Soal[],
@@ -144,7 +158,7 @@ export default function UjianPage() {
         setShowAgreement(true)
         return
       }
- 
+
       if (!sesiLokal || sesiLokal.sesi_id !== sesiDB.id) {
         simpanSesiLokal({ sesi_id: sesiDB.id, token_sesi: token, ujian_id: ujian.id, nim: mahasiswa.nim,
           waktu_mulai: new Date(sesiDB.waktu_mulai).getTime(), jawaban: {}, jumlah_pelanggaran: sesiDB.jumlah_pelanggaran, last_sync: Date.now() })
@@ -158,24 +172,25 @@ export default function UjianPage() {
       setLoading(false)
     } catch (err) { console.error(err); alert('Gagal memuat ujian. Hubungi pengawas.') }
   }
- 
+
   async function handleSetuju() {
-    if (!pendingDataRef.current || !checkedAgreement) return
+    const sb = supabaseRef.current
+    if (!pendingDataRef.current || !checkedAgreement || !sb) return
     const { sesiDB, soalFinal, soalDB, jawabanMap, ujian, mahasiswa, token } = pendingDataRef.current
     try {
       const waktuMulai = new Date().toISOString()
-      await supabase.from('sesi_ujian')
+      await sb.from('sesi_ujian')
         .update({ status: 'mengerjakan', waktu_mulai: waktuMulai })
         .eq('id', sesiDB.id)
-      
+
       sesiDB.status = 'mengerjakan'
       sesiDB.waktu_mulai = waktuMulai
-      
+
       simpanSesiLokal({
         sesi_id: sesiDB.id, token_sesi: token, ujian_id: ujian.id, nim: mahasiswa.nim,
         waktu_mulai: new Date(waktuMulai).getTime(), jawaban: {}, jumlah_pelanggaran: 0, last_sync: Date.now()
       })
-      
+
       setSesi({ ...sesiDB, ujian, mahasiswa })
       setSoalList(soalDB)
       setSoalTerurut(soalFinal)
@@ -189,7 +204,7 @@ export default function UjianPage() {
       alert('Gagal memulai ujian. Hubungi pengawas.')
     }
   }
- 
+
   useEffect(() => {
     async function requestWakeLock() {
       try { if ('wakeLock' in navigator) wakeLockRef.current = await (navigator as any).wakeLock.request('screen') } catch (e) {}
@@ -199,7 +214,7 @@ export default function UjianPage() {
     document.addEventListener('visibilitychange', fn)
     return () => { document.removeEventListener('visibilitychange', fn); wakeLockRef.current?.release() }
   }, [])
- 
+
   useEffect(() => {
     if (loading || !sesi) return
     timerRef.current = setInterval(() => {
@@ -207,15 +222,16 @@ export default function UjianPage() {
     }, 1000)
     return () => clearInterval(timerRef.current!)
   }, [loading, sesi])
- 
+
   useEffect(() => {
     if (loading || !sesi) return
     syncTimerRef.current = setInterval(() => { syncJawaban() }, 15000)
     return () => clearInterval(syncTimerRef.current!)
   }, [loading, sesi, jawabanState])
- 
+
   const syncJawaban = useCallback(async () => {
-    if (isSyncingRef.current || !sesi) return
+    const sb = supabaseRef.current
+    if (isSyncingRef.current || !sesi || !sb) return
     isSyncingRef.current = true
     try {
       const sesiLokal = ambilSesiLokal()
@@ -223,17 +239,17 @@ export default function UjianPage() {
       const belumSync = hitungJawabanBelumSync(sesiLokal)
       if (belumSync.length === 0) return
       const upsertData = belumSync.map((soal_id) => ({ sesi_id: sesi.id, soal_id, jawaban_mahasiswa: sesiLokal.jawaban[soal_id]?.jawaban || null }))
-      const { error } = await supabase.from('jawaban').upsert(upsertData, { onConflict: 'sesi_id,soal_id' })
+      const { error } = await sb.from('jawaban').upsert(upsertData, { onConflict: 'sesi_id,soal_id' })
       if (!error) tandaiSudahSync(sesiLokal, belumSync)
     } catch (e) { console.error('Sync gagal:', e) } finally { isSyncingRef.current = false }
   }, [sesi])
- 
+
   const resetIdleTimer = useCallback(() => {
     setShowIdlePopup(false)
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
     idleTimerRef.current = setTimeout(() => { setShowIdlePopup(true) }, IDLE_TIMEOUT)
   }, [])
- 
+
   useEffect(() => {
     if (loading) return
     const events = ['touchstart', 'touchmove', 'click', 'keydown']
@@ -241,7 +257,7 @@ export default function UjianPage() {
     resetIdleTimer()
     return () => { events.forEach((e) => window.removeEventListener(e, resetIdleTimer)); if (idleTimerRef.current) clearTimeout(idleTimerRef.current) }
   }, [loading, resetIdleTimer])
- 
+
   useEffect(() => {
     if (loading || !sesi) return
 
@@ -249,20 +265,22 @@ export default function UjianPage() {
 
     async function kirimPelanggaran(tipe: 'pindah_tab' | 'blur_app') {
       if (sudahSubmitRef.current) return
+      const sb = supabaseRef.current
+      if (!sb) return
       waktuKembaliRef.current = Date.now()
-      
+
       try {
-        const { data, error } = await supabase.rpc('catat_pelanggaran', { 
-          p_sesi_id: sesi!.id, 
-          p_tipe: tipe, 
-          p_keterangan: tipe === 'pindah_tab' ? 'Tab berpindah' : 'Browser blur' 
+        const { data, error } = await sb.rpc('catat_pelanggaran', {
+          p_sesi_id: sesi!.id,
+          p_tipe: tipe,
+          p_keterangan: tipe === 'pindah_tab' ? 'Tab berpindah' : 'Browser blur'
         })
-        
+
         if (error) {
           console.error("Error dari database:", error)
           return
         }
-        
+
         if (!data) return
         console.log("CEK DATA RPC SUPABASE:", data)
 
@@ -273,7 +291,7 @@ export default function UjianPage() {
         if (typeof objData === 'object' && objData !== null && objData.error) {
             console.warn("Sistem menolak pencatatan:", objData.error);
             router.replace('/selesai');
-            return; 
+            return;
         }
 
         // Ekstrak angka pelanggaran
@@ -288,14 +306,14 @@ export default function UjianPage() {
         const isAutoSubmit = jumlah >= maksPelanggaran;
 
         setPelanggaranCount(jumlah)
-        
-        if (isAutoSubmit) { 
+
+        if (isAutoSubmit) {
           setStatusPeringatan('auto_submit');
-          setShowPeringatan(true); 
-          sudahSubmitRef.current = true; 
-          await syncJawaban(); 
-          setTimeout(() => router.replace('/selesai'), 3000) 
-        } else { 
+          setShowPeringatan(true);
+          sudahSubmitRef.current = true;
+          await syncJawaban();
+          setTimeout(() => router.replace('/selesai'), 3000)
+        } else {
           if (jumlah === maksPelanggaran - 1) {
             setStatusPeringatan('peringatan3');
           } else if (jumlah === 1) {
@@ -303,10 +321,10 @@ export default function UjianPage() {
           } else {
             setStatusPeringatan('peringatan2');
           }
-          setShowPeringatan(true) 
+          setShowPeringatan(true)
         }
-      } catch (e) { 
-        console.error(e) 
+      } catch (e) {
+        console.error(e)
       }
     }
 
@@ -327,44 +345,47 @@ export default function UjianPage() {
     const onBlur = () => { if (document.visibilityState === 'visible') handlePelanggaran('blur_app') }
     document.addEventListener('visibilitychange', onVisibility)
     window.addEventListener('blur', onBlur)
-    
+
     return () => {
       document.removeEventListener('visibilitychange', onVisibility)
       window.removeEventListener('blur', onBlur)
       if (debounceTimer) clearTimeout(debounceTimer)
     }
   }, [loading, sesi, syncJawaban, router])
- 
+
   function handleJawab(soalId: string, jawaban: string) {
     setJawabanState((prev) => ({ ...prev, [soalId]: jawaban }))
     resetIdleTimer()
     const sesiLokal = ambilSesiLokal()
     if (sesiLokal) simpanJawabanLokal(sesiLokal, soalId, jawaban)
   }
- 
+
   function handleNavigasiSoal(indeks: number) {
     setIndeksSoalAktif(indeks); resetIdleTimer(); window.scrollTo({ top: 0, behavior: 'smooth' })
   }
- 
+
   async function handleAutoSubmitWaktu() {
     if (sudahSubmitRef.current) return
+    const sb = supabaseRef.current
+    if (!sb) return
     sudahSubmitRef.current = true
     await syncJawaban()
-    await supabase.rpc('submit_ujian', { p_sesi_id: sesi!.id })
+    await sb.rpc('submit_ujian', { p_sesi_id: sesi!.id })
     router.replace('/selesai')
   }
- 
+
   async function handleSubmitManual() {
-    if (submitting || sudahSubmitRef.current) return
+    const sb = supabaseRef.current
+    if (submitting || sudahSubmitRef.current || !sb) return
     setSubmitting(true); sudahSubmitRef.current = true
     try {
       await syncJawaban()
-      const { error } = await supabase.rpc('submit_ujian', { p_sesi_id: sesi!.id })
+      const { error } = await sb.rpc('submit_ujian', { p_sesi_id: sesi!.id })
       if (error) throw error
       router.replace('/selesai')
     } catch (err) { console.error(err); alert('Gagal submit. Coba lagi atau hubungi pengawas.'); setSubmitting(false); sudahSubmitRef.current = false }
   }
- 
+
   if (showAgreement && pendingDataRef.current) {
     const { ujian, mahasiswa } = pendingDataRef.current
     return (
@@ -374,7 +395,7 @@ export default function UjianPage() {
           <p className="text-sm font-semibold text-gray-800 mt-0.5 truncate">{ujian?.judul}</p>
           <p className="text-xs text-gray-500 mt-0.5 truncate">{ujian?.mata_kuliah?.nama_matkul} • {mahasiswa?.nama}</p>
         </div>
- 
+
         <div className="flex-1 px-4 py-5 flex flex-col gap-4 overflow-hidden">
           <div className="card text-center pt-6 pb-5">
             <div className="w-14 h-14 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-3">
@@ -386,7 +407,7 @@ export default function UjianPage() {
             <h1 className="text-base font-bold text-gray-800">Pernyataan Kejujuran Akademik</h1>
             <p className="text-xs text-gray-500 mt-1">Gulir & baca seluruh ketentuan sebelum memulai ujian</p>
           </div>
- 
+
           <div className="card flex-1 flex flex-col p-0 overflow-hidden min-h-0">
             <div
               ref={agreementScrollRef}
@@ -415,7 +436,7 @@ export default function UjianPage() {
               )}
             </div>
           </div>
- 
+
           <div className="card space-y-4">
             <label className={`flex items-start gap-3 text-sm ${sudahScrollAgreement ? 'text-gray-700 cursor-pointer' : 'text-gray-400 pointer-events-none'}`}>
               <input
@@ -439,7 +460,7 @@ export default function UjianPage() {
       </div>
     )
   }
- 
+
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-gray-50">
@@ -448,16 +469,16 @@ export default function UjianPage() {
       </div>
     )
   }
- 
+
   if (!sesi || soalTerurut.length === 0) return null
- 
+
   const soalAktif = soalTerurut[indeksSoalAktif]
   const totalSoal = soalTerurut.length
   const totalTerjawab = Object.keys(jawabanState).filter((id) => soalTerurut.some((s) => s.id === id)).length
   const isTimerWarning = sisaDetik <= 300
   const ujianData = sesi.ujian as any
   const mahasiswaData = sesi.mahasiswa as any
- 
+
   return (
     <div
       className="min-h-screen bg-gray-50 flex flex-col relative"
@@ -467,7 +488,7 @@ export default function UjianPage() {
       onCut={e => e.preventDefault()}
     >
       <div className="watermark" aria-hidden="true">{mahasiswaData?.nim} • {mahasiswaData?.nama}</div>
- 
+
       <div className="sticky top-0 z-20 bg-white border-b border-gray-100 shadow-sm">
         <div className="px-4 py-3">
           <div className="flex items-center justify-between mb-2">
@@ -502,7 +523,7 @@ export default function UjianPage() {
           </div>
         </div>
       </div>
- 
+
       <div className="flex-1 px-4 py-5 pb-32">
         <div className="card animate-fade-in" key={soalAktif.id}>
           <div className="flex items-center justify-between mb-4">
@@ -543,7 +564,7 @@ export default function UjianPage() {
           )}
         </div>
       </div>
- 
+
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 px-4 py-4 z-20">
         <div className="flex items-center gap-3">
           <button onClick={() => handleNavigasiSoal(Math.max(0, indeksSoalAktif - 1))} disabled={indeksSoalAktif === 0} className="btn-secondary px-4 py-3">
@@ -558,7 +579,7 @@ export default function UjianPage() {
           )}
         </div>
       </div>
- 
+
       {}
       {showIdlePopup && (
         <div className="overlay animate-fade-in">
@@ -570,7 +591,7 @@ export default function UjianPage() {
           </div>
         </div>
       )}
- 
+
       {showPeringatan && statusPeringatan !== 'idle' && statusPeringatan !== 'auto_submit' && (
         <div className="overlay animate-fade-in">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl border-t-4 border-t-red-500">
@@ -592,7 +613,7 @@ export default function UjianPage() {
           </div>
         </div>
       )}
- 
+
       {statusPeringatan === 'auto_submit' && (
         <div className="overlay">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl border-t-4 border-t-gray-800 text-center">
@@ -603,7 +624,7 @@ export default function UjianPage() {
           </div>
         </div>
       )}
- 
+
       {showKonfirmasiSubmit && (
         <div className="overlay animate-fade-in">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
