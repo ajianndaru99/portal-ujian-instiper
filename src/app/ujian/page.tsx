@@ -174,36 +174,49 @@ export default function UjianPage() {
   }
 
   async function handleSetuju() {
-    const sb = supabaseRef.current
-    if (!pendingDataRef.current || !checkedAgreement || !sb) return
-    const { sesiDB, soalFinal, soalDB, jawabanMap, ujian, mahasiswa, token } = pendingDataRef.current
-    try {
-      const waktuMulai = new Date().toISOString()
+  const sb = supabaseRef.current
+  if (!pendingDataRef.current || !checkedAgreement || !sb) return
+  const { sesiDB, soalFinal, soalDB, jawabanMap, ujian, mahasiswa, token } = pendingDataRef.current
+  try {
+    // ✅ Hanya set waktu_mulai jika belum ada di DB
+    const waktuMulai = sesiDB.waktu_mulai
+      ? sesiDB.waktu_mulai
+      : new Date().toISOString()
+
+    // ✅ Hanya update ke DB jika waktu_mulai memang belum ada
+    if (!sesiDB.waktu_mulai) {
       await sb.from('sesi_ujian')
         .update({ status: 'mengerjakan', waktu_mulai: waktuMulai })
         .eq('id', sesiDB.id)
-
-      sesiDB.status = 'mengerjakan'
-      sesiDB.waktu_mulai = waktuMulai
-
-      simpanSesiLokal({
-        sesi_id: sesiDB.id, token_sesi: token, ujian_id: ujian.id, nim: mahasiswa.nim,
-        waktu_mulai: new Date(waktuMulai).getTime(), jawaban: {}, jumlah_pelanggaran: 0, last_sync: Date.now()
-      })
-
-      setSesi({ ...sesiDB, ujian, mahasiswa })
-      setSoalList(soalDB)
-      setSoalTerurut(soalFinal)
-      setJawabanState(jawabanMap)
-      setPelanggaranCount(0)
-      setSisaDetik(ujian.durasi_menit * 60)
-      setShowAgreement(false)
-      setLoading(false)
-    } catch (err) {
-      console.error(err)
-      alert('Gagal memulai ujian. Hubungi pengawas.')
+    } else {
+      await sb.from('sesi_ujian')
+        .update({ status: 'mengerjakan' })
+        .eq('id', sesiDB.id)
     }
+
+    sesiDB.status = 'mengerjakan'
+    sesiDB.waktu_mulai = waktuMulai
+
+    simpanSesiLokal({
+      sesi_id: sesiDB.id, token_sesi: token, ujian_id: ujian.id, nim: mahasiswa.nim,
+      waktu_mulai: new Date(waktuMulai).getTime(), jawaban: {}, jumlah_pelanggaran: 0, last_sync: Date.now()
+    })
+
+    // ✅ Lanjutkan set state setelah simpan lokal
+    setSesi({ ...sesiDB, ujian, mahasiswa })
+    setSoalList(soalDB as Soal[])
+    setSoalTerurut(soalFinal)
+    setJawabanState(jawabanMap)
+    setPelanggaranCount(0)
+    setSisaDetik(hitungSisaDetik(waktuMulai, ujian.durasi_menit))
+    setShowAgreement(false)
+    setLoading(false)
+
+  } catch (err) {
+    console.error(err)
+    alert('Gagal memulai ujian. Hubungi pengawas.')
   }
+}
 
   useEffect(() => {
     async function requestWakeLock() {
