@@ -56,46 +56,51 @@ export default function SelesaiPage() {
   }, [])
 
   async function loadHasil(token: string | null) {
-    if (!token) { setLoading(false); return }
-    try {
-      const supabase = createClientMahasiswa(token)
-      const { data: sesi } = await supabase
-        .from('sesi_ujian')
-        .select(`
-          *,
-          mahasiswa ( nim, nama ),
-          ujian (
-            judul,
-            mata_kuliah ( nama_matkul ),
-            soal ( tipe )
-          )
-        `)
-        .eq('token_sesi', token)
-        .single()
+  if (!token) { setLoading(false); return }
+  try {
+    const supabase = createClientMahasiswa(token)
 
-      if (!sesi) { setLoading(false); return }
+    const { data: sesi, error } = await supabase
+      .from('sesi_ujian')
+      .select(`
+        *,
+        mahasiswa ( nim, nama ),
+        ujian (
+          judul,
+          mata_kuliah:matkul_id ( nama_matkul ),
+          soal ( tipe )
+        )
+      `)
+      .eq('token_sesi', token)
+      .single()
 
-      const adaEsai = (sesi.ujian?.soal || []).some((s: any) => s.tipe === 'esai')
+    // Debug sementara - hapus setelah fix
+    console.log('STRUKTUR SESI:', JSON.stringify(sesi, null, 2))
+    console.log('ERROR:', error)
 
-      setHasil({
-        nama: sesi.mahasiswa?.nama || '',
-        nim: sesi.mahasiswa?.nim || '',
-        judul_ujian: sesi.ujian?.judul || '',
-        nama_matkul: sesi.ujian?.mata_kuliah?.nama_matkul || '',
-        status: sesi.status,
-        waktu_mulai: sesi.waktu_mulai || '',
-        waktu_selesai: sesi.waktu_selesai || new Date().toISOString(),
-        durasi_menit: 0,
-        jumlah_pelanggaran: sesi.jumlah_pelanggaran,
-        nilai_pg: sesi.nilai_pg,
-        ada_esai: adaEsai,
-      })
-    } catch (err) {
-      console.error(err)
-    } finally {
-      setLoading(false)
-    }
+    if (!sesi) { setLoading(false); return }
+
+    const adaEsai = (sesi.ujian?.soal || []).some((s: any) => s.tipe === 'esai')
+
+    setHasil({
+      nama: sesi.mahasiswa?.nama || '',
+      nim: sesi.mahasiswa?.nim || '',
+      judul_ujian: sesi.ujian?.judul || '',
+      nama_matkul: sesi.ujian?.mata_kuliah?.nama_matkul || '',
+      status: sesi.status,
+      waktu_mulai: sesi.waktu_mulai || '',
+      waktu_selesai: sesi.waktu_selesai || '',  // ← hapus fallback new Date()
+      durasi_menit: 0,
+      jumlah_pelanggaran: sesi.jumlah_pelanggaran,
+      nilai_pg: sesi.nilai_pg,
+      ada_esai: adaEsai,
+    })
+  } catch (err) {
+    console.error(err)
+  } finally {
+    setLoading(false)
   }
+}
 
   if (loading) {
     return (
@@ -154,10 +159,12 @@ export default function SelesaiPage() {
                 <span className="font-semibold text-gray-800 text-right">{formatWaktu(hasil.waktu_selesai)}</span>
               </div>
             )}
-            {hasil.waktu_mulai && hasil.waktu_selesai && (
+            {hasil.waktu_mulai && hasil.waktu_selesai && hasil.waktu_selesai !== '' && (
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500">Durasi</span>
-                <span className="font-semibold text-gray-800">{hitungDurasi(hasil.waktu_mulai, hasil.waktu_selesai)}</span>
+                <span className="font-semibold text-gray-800">
+                  {hitungDurasi(hasil.waktu_mulai, hasil.waktu_selesai)}
+                </span>
               </div>
             )}
             {hasil.jumlah_pelanggaran > 0 && (
