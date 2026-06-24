@@ -285,6 +285,70 @@ export default function UjianPage() {
           jumlah = Number(objData);
           autoSubmit = jumlah >= 3; 
       }
+      
+      async function kirimPelanggaran(tipe: 'pindah_tab' | 'blur_app') {
+    if (sudahSubmitRef.current) return
+    waktuKembaliRef.current = Date.now()
+    
+    try {
+      const { data, error } = await supabase.rpc('catat_pelanggaran', { 
+        p_sesi_id: sesi!.id, 
+        p_tipe: tipe, 
+        p_keterangan: tipe === 'pindah_tab' ? 'Tab berpindah' : 'Browser blur' 
+      })
+      
+      if (error) {
+        console.error("Error dari database:", error)
+        return
+      }
+      
+      if (!data) return
+      console.log("CEK DATA RPC SUPABASE:", data)
+
+      let jumlah = 0;
+      const objData = Array.isArray(data) ? data[0] : data;
+
+      // --- PERBAIKAN BARU: TANGKAP PENOLAKAN DARI DATABASE ---
+      // Jika database membalas dengan pesan error kustom (Sesi tidak aktif)
+      if (typeof objData === 'object' && objData !== null && objData.error) {
+          console.warn("Sistem menolak pencatatan:", objData.error);
+          // Paksa keluarkan mahasiswa ke halaman selesai karena sesi sudah tidak valid
+          router.replace('/selesai');
+          return; // Hentikan eksekusi fungsi di sini
+      }
+      // -------------------------------------------------------
+
+      if (typeof objData === 'object' && objData !== null) {
+          jumlah = Number(objData.jumlah_pelanggaran);
+      } else if (typeof objData === 'number' || typeof objData === 'string') {
+          jumlah = Number(objData);
+      }
+
+      const maksPelanggaran = (sesi?.ujian as any)?.maks_pelanggaran || 3;
+      const isAutoSubmit = jumlah >= maksPelanggaran;
+
+      setPelanggaranCount(jumlah)
+      
+      if (isAutoSubmit) { 
+        setStatusPeringatan('auto_submit');
+        setShowPeringatan(true); 
+        sudahSubmitRef.current = true; 
+        await syncJawaban(); 
+        setTimeout(() => router.replace('/selesai'), 3000) 
+      } else { 
+        if (jumlah === maksPelanggaran - 1) {
+          setStatusPeringatan('peringatan3');
+        } else if (jumlah === 1) {
+          setStatusPeringatan('peringatan1');
+        } else {
+          setStatusPeringatan('peringatan2');
+        }
+        setShowPeringatan(true) 
+      }
+    } catch (e) { 
+      console.error(e) 
+    }
+  }
 
       setPelanggaranCount(jumlah)
       
