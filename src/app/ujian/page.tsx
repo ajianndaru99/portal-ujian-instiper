@@ -249,14 +249,35 @@ export default function UjianPage() {
     if (sudahSubmitRef.current) return
     waktuKembaliRef.current = Date.now()
     try {
-      const { data } = await supabase.rpc('catat_pelanggaran', { p_sesi_id: sesi!.id, p_tipe: tipe, p_keterangan: tipe === 'pindah_tab' ? 'Tab berpindah' : 'Browser blur' })
+      const { data } = await supabase.rpc('catat_pelanggaran', { 
+        p_sesi_id: sesi!.id, 
+        p_tipe: tipe, 
+        p_keterangan: tipe === 'pindah_tab' ? 'Tab berpindah' : 'Browser blur' 
+      })
+      
       if (!data) return
-      const jumlah = data.jumlah_pelanggaran as number
-      const autoSubmit = data.auto_submit as boolean
+
+      // --- PERBAIKAN MULAI DI SINI ---
+      // Cek apakah data berupa angka langsung atau sebuah objek
+      const jumlah = typeof data === 'number' ? data : data.jumlah_pelanggaran;
+      const autoSubmit = typeof data === 'number' ? jumlah >= 3 : data.auto_submit;
+      // -------------------------------
+
       setPelanggaranCount(jumlah)
-      if (autoSubmit) { setStatusPeringatan('auto_submit'); setShowPeringatan(true); sudahSubmitRef.current = true; await syncJawaban(); setTimeout(() => router.replace('/selesai'), 3000) }
-      else { setStatusPeringatan(jumlah === 1 ? 'peringatan1' : jumlah === 2 ? 'peringatan2' : 'peringatan3'); setShowPeringatan(true) }
-    } catch (e) { console.error(e) }
+      
+      if (autoSubmit) { 
+        setStatusPeringatan('auto_submit');
+        setShowPeringatan(true); 
+        sudahSubmitRef.current = true; 
+        await syncJawaban(); 
+        setTimeout(() => router.replace('/selesai'), 3000) 
+      } else { 
+        setStatusPeringatan(jumlah === 1 ? 'peringatan1' : jumlah === 2 ? 'peringatan2' : 'peringatan3');
+        setShowPeringatan(true) 
+      }
+    } catch (e) { 
+      console.error(e) 
+    }
   }
 
   let debounceTimer: ReturnType<typeof setTimeout> | null = null
