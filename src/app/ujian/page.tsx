@@ -248,19 +248,29 @@ export default function UjianPage() {
   async function kirimPelanggaran(tipe: 'pindah_tab' | 'blur_app') {
     if (sudahSubmitRef.current) return
     waktuKembaliRef.current = Date.now()
+    
     try {
-      const { data } = await supabase.rpc('catat_pelanggaran', { 
+      const { data, error } = await supabase.rpc('catat_pelanggaran', { 
         p_sesi_id: sesi!.id, 
         p_tipe: tipe, 
         p_keterangan: tipe === 'pindah_tab' ? 'Tab berpindah' : 'Browser blur' 
       })
       
+      // Jika RPC gagal dieksekusi di database, hentikan proses
+      if (error) {
+        console.error("Error dari database:", error)
+        return
+      }
+      
       if (!data) return
 
-      // --- PERBAIKAN MULAI DI SINI ---
-      // Cek apakah data berupa angka langsung atau sebuah objek
-      const jumlah = typeof data === 'number' ? data : data.jumlah_pelanggaran;
-      const autoSubmit = typeof data === 'number' ? jumlah >= 3 : data.auto_submit;
+      // --- PERBAIKAN UTAMA DI SINI ---
+      // Amankan bentuk data: Jika Supabase mengembalikan Array, ambil item pertamanya.
+      const objData = Array.isArray(data) ? data[0] : data;
+
+      // Ekstrak angka dengan aman
+      const jumlah = typeof objData === 'number' ? objData : objData.jumlah_pelanggaran;
+      const autoSubmit = typeof objData === 'number' ? jumlah >= 3 : objData.auto_submit;
       // -------------------------------
 
       setPelanggaranCount(jumlah)
