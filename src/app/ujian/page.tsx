@@ -13,7 +13,6 @@ import {
  
 type StatusPeringatan = 'idle' | 'peringatan1' | 'peringatan2' | 'peringatan3' | 'auto_submit'
  
-// ─── Poin pernyataan kejujuran ─────────────────────────────────────────────
 const POIN_AGREEMENT = [
   {
     judul: 'Kerjakan Sendiri',
@@ -47,38 +46,41 @@ export default function UjianPage() {
   const [loading, setLoading] = useState(true)
   const [sisaDetik, setSisaDetik] = useState(0)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
+  
   const [statusPeringatan, setStatusPeringatan] = useState<StatusPeringatan>('idle')
   const [pelanggaranCount, setPelanggaranCount] = useState(0)
   const [showPeringatan, setShowPeringatan] = useState(false)
   const waktuKembaliRef = useRef<number | null>(null)
+  
   const [showIdlePopup, setShowIdlePopup] = useState(false)
   const idleTimerRef = useRef<NodeJS.Timeout | null>(null)
   const IDLE_TIMEOUT = 90000
+  
   const syncTimerRef = useRef<NodeJS.Timeout | null>(null)
   const isSyncingRef = useRef(false)
   const wakeLockRef = useRef<WakeLockSentinel | null>(null)
+  
   const [showKonfirmasiSubmit, setShowKonfirmasiSubmit] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const sudahSubmitRef = useRef(false)
  
-  // ─── Agreement states (BARU) ───────────────────────────────────────────────
   const [showAgreement, setShowAgreement] = useState(false)
   const [sudahScrollAgreement, setSudahScrollAgreement] = useState(false)
   const [checkedAgreement, setCheckedAgreement] = useState(false)
   const agreementScrollRef = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
-  if (!showAgreement) return
-  const cek = () => {
-    const el = agreementScrollRef.current
-    if (!el) return
-    const butuhScroll = el.scrollHeight - el.clientHeight > 32
-    if (!butuhScroll) setSudahScrollAgreement(true)
-  }
-  // beri waktu sedikit untuk memastikan layout sudah final
-  const t = setTimeout(cek, 100)
-  return () => clearTimeout(t)
-}, [showAgreement])
-  // Menyimpan data sementara selama mahasiswa belum setuju
+    if (!showAgreement) return
+    const cek = () => {
+      const el = agreementScrollRef.current
+      if (!el) return
+      const butuhScroll = el.scrollHeight - el.clientHeight > 32
+      if (!butuhScroll) setSudahScrollAgreement(true)
+    }
+    const t = setTimeout(cek, 100)
+    return () => clearTimeout(t)
+  }, [showAgreement])
+
   const pendingDataRef = useRef<{
     sesiDB: any; soalFinal: Soal[]; soalDB: Soal[]
     jawabanMap: Record<string, string>; ujian: any; mahasiswa: any; token: string
@@ -96,19 +98,24 @@ export default function UjianPage() {
       if (!mahasiswaData || !ujianData) { router.replace('/'); return }
       const mahasiswa = JSON.parse(mahasiswaData)
       const ujian = JSON.parse(ujianData)
+      
       const { data: sesiDB, error: errSesi } = await supabase.from('sesi_ujian').select('*').eq('token_sesi', token).single()
       if (errSesi || !sesiDB) { router.replace('/'); return }
       if (['selesai', 'auto_submit', 'paksa_submit'].includes(sesiDB.status)) { router.replace('/selesai'); return }
+      
       const { data: soalDBRaw, error: errSoal } = await supabase
         .from('soal').select('id, ujian_id, nomor_urut, pertanyaan, tipe, opsi_jawaban, bobot_nilai')
         .eq('ujian_id', ujian.id).order('nomor_urut')
+      
       if (errSoal || !soalDBRaw) throw new Error('Gagal memuat soal')
+      
       const soalDB = soalDBRaw.map((s: any) => ({
         ...s,
         opsi_jawaban: Array.isArray(s.opsi_jawaban)
           ? s.opsi_jawaban
           : (typeof s.opsi_jawaban === 'string' ? (() => { try { return JSON.parse(s.opsi_jawaban) } catch { return null } })() : s.opsi_jawaban),
       }))
+      
       let soalFinal = soalDB as Soal[]
       if (ujian.acak_soal) {
         if (sesiDB.urutan_soal && sesiDB.urutan_soal.length > 0) {
@@ -120,27 +127,24 @@ export default function UjianPage() {
         }
       }
  
-      // Muat jawaban terlebih dahulu (berlaku untuk semua status)
       const { data: jawabanDB } = await supabase.from('jawaban').select('soal_id, jawaban_mahasiswa').eq('sesi_id', sesiDB.id)
       const jawabanMap: Record<string, string> = {}
       jawabanDB?.forEach((j) => { if (j.jawaban_mahasiswa) jawabanMap[j.soal_id] = j.jawaban_mahasiswa })
+      
       const sesiLokal = ambilSesiLokal()
       if (sesiLokal && sesiLokal.sesi_id === sesiDB.id) {
         Object.entries(sesiLokal.jawaban).forEach(([soal_id, data]) => { if ((data as any).jawaban) jawabanMap[soal_id] = (data as any).jawaban })
       }
  
-      // ── BARU: Jika belum mulai, tahan dulu di halaman pernyataan ──────────
       if (sesiDB.status === 'belum_mulai') {
         pendingDataRef.current = {
           sesiDB, soalFinal, soalDB: soalDB as Soal[],
           jawabanMap, ujian, mahasiswa, token
         }
         setShowAgreement(true)
-        return // timer BELUM jalan, status BELUM berubah di DB
+        return
       }
-      // ──────────────────────────────────────────────────────────────────────
  
-      // Status 'mengerjakan': mahasiswa kembali setelah refresh/reconnect
       if (!sesiLokal || sesiLokal.sesi_id !== sesiDB.id) {
         simpanSesiLokal({ sesi_id: sesiDB.id, token_sesi: token, ujian_id: ujian.id, nim: mahasiswa.nim,
           waktu_mulai: new Date(sesiDB.waktu_mulai).getTime(), jawaban: {}, jumlah_pelanggaran: sesiDB.jumlah_pelanggaran, last_sync: Date.now() })
@@ -155,7 +159,6 @@ export default function UjianPage() {
     } catch (err) { console.error(err); alert('Gagal memuat ujian. Hubungi pengawas.') }
   }
  
-  // ─── BARU: Dipanggil setelah mahasiswa centang & konfirmasi ───────────────
   async function handleSetuju() {
     if (!pendingDataRef.current || !checkedAgreement) return
     const { sesiDB, soalFinal, soalDB, jawabanMap, ujian, mahasiswa, token } = pendingDataRef.current
@@ -164,20 +167,23 @@ export default function UjianPage() {
       await supabase.from('sesi_ujian')
         .update({ status: 'mengerjakan', waktu_mulai: waktuMulai })
         .eq('id', sesiDB.id)
+      
       sesiDB.status = 'mengerjakan'
       sesiDB.waktu_mulai = waktuMulai
+      
       simpanSesiLokal({
         sesi_id: sesiDB.id, token_sesi: token, ujian_id: ujian.id, nim: mahasiswa.nim,
         waktu_mulai: new Date(waktuMulai).getTime(), jawaban: {}, jumlah_pelanggaran: 0, last_sync: Date.now()
       })
+      
       setSesi({ ...sesiDB, ujian, mahasiswa })
       setSoalList(soalDB)
       setSoalTerurut(soalFinal)
       setJawabanState(jawabanMap)
       setPelanggaranCount(0)
-      setSisaDetik(ujian.durasi_menit * 60) // mulai dari durasi penuh
+      setSisaDetik(ujian.durasi_menit * 60)
       setShowAgreement(false)
-      setLoading(false) // ← baru di sini timer & anti-cheat listener aktif
+      setLoading(false)
     } catch (err) {
       console.error(err)
       alert('Gagal memulai ujian. Hubungi pengawas.')
@@ -237,162 +243,97 @@ export default function UjianPage() {
   }, [loading, resetIdleTimer])
  
   useEffect(() => {
-  if (loading || !sesi) return
+    if (loading || !sesi) return
 
-  // Mencatat waktu kejadian terakhir agar pindah_tab & blur_app yang terpicu
-  // nyaris bersamaan (akibat satu aksi nyata: membuka tab/app lain) tidak
-  // dihitung sebagai dua pelanggaran terpisah. Browser sering memicu kedua
-  // event ini bersamaan saat tab baru dibuka.
-  const DEBOUNCE_MS = 800
+    const DEBOUNCE_MS = 800
 
-  async function kirimPelanggaran(tipe: 'pindah_tab' | 'blur_app') {
-    if (sudahSubmitRef.current) return
-    waktuKembaliRef.current = Date.now()
-    
-    try {
-      const { data, error } = await supabase.rpc('catat_pelanggaran', { 
-        p_sesi_id: sesi!.id, 
-        p_tipe: tipe, 
-        p_keterangan: tipe === 'pindah_tab' ? 'Tab berpindah' : 'Browser blur' 
-      })
+    async function kirimPelanggaran(tipe: 'pindah_tab' | 'blur_app') {
+      if (sudahSubmitRef.current) return
+      waktuKembaliRef.current = Date.now()
       
-      if (error) {
-        console.error("Error dari database:", error)
-        return
-      }
-      
-      if (!data) return
-
-      // --- DEBUGGING: Tampilkan isi asli dari database di Console browser ---
-      console.log("CEK DATA RPC SUPABASE:", data)
-      // ----------------------------------------------------------------------
-
-      // --- PERBAIKAN PARSING DATA ---
-      let jumlah = 0;
-      let autoSubmit = false;
-
-      // Amankan bentuk data: Jika Supabase mengembalikan Array, ambil item pertamanya
-      const objData = Array.isArray(data) ? data[0] : data;
-
-      // Jika database merespons bentuk Objek (contoh: { jumlah_pelanggaran: "1", auto_submit: false })
-      if (typeof objData === 'object' && objData !== null) {
-          // Gunakan fungsi Number() agar string "1" paksa diubah menjadi angka 1
-          jumlah = Number(objData.jumlah_pelanggaran);
-          autoSubmit = Boolean(objData.auto_submit);
-      } 
-      // Jika database merespons langsung angka mentah (contoh: 1 atau "1")
-      else if (typeof objData === 'number' || typeof objData === 'string') {
-          jumlah = Number(objData);
-          autoSubmit = jumlah >= 3; 
-      }
-      
-      async function kirimPelanggaran(tipe: 'pindah_tab' | 'blur_app') {
-    if (sudahSubmitRef.current) return
-    waktuKembaliRef.current = Date.now()
-    
-    try {
-      const { data, error } = await supabase.rpc('catat_pelanggaran', { 
-        p_sesi_id: sesi!.id, 
-        p_tipe: tipe, 
-        p_keterangan: tipe === 'pindah_tab' ? 'Tab berpindah' : 'Browser blur' 
-      })
-      
-      if (error) {
-        console.error("Error dari database:", error)
-        return
-      }
-      
-      if (!data) return
-      console.log("CEK DATA RPC SUPABASE:", data)
-
-      let jumlah = 0;
-      const objData = Array.isArray(data) ? data[0] : data;
-
-      // --- PERBAIKAN BARU: TANGKAP PENOLAKAN DARI DATABASE ---
-      // Jika database membalas dengan pesan error kustom (Sesi tidak aktif)
-      if (typeof objData === 'object' && objData !== null && objData.error) {
-          console.warn("Sistem menolak pencatatan:", objData.error);
-          // Paksa keluarkan mahasiswa ke halaman selesai karena sesi sudah tidak valid
-          router.replace('/selesai');
-          return; // Hentikan eksekusi fungsi di sini
-      }
-      // -------------------------------------------------------
-
-      if (typeof objData === 'object' && objData !== null) {
-          jumlah = Number(objData.jumlah_pelanggaran);
-      } else if (typeof objData === 'number' || typeof objData === 'string') {
-          jumlah = Number(objData);
-      }
-
-      const maksPelanggaran = (sesi?.ujian as any)?.maks_pelanggaran || 3;
-      const isAutoSubmit = jumlah >= maksPelanggaran;
-
-      setPelanggaranCount(jumlah)
-      
-      if (isAutoSubmit) { 
-        setStatusPeringatan('auto_submit');
-        setShowPeringatan(true); 
-        sudahSubmitRef.current = true; 
-        await syncJawaban(); 
-        setTimeout(() => router.replace('/selesai'), 3000) 
-      } else { 
-        if (jumlah === maksPelanggaran - 1) {
-          setStatusPeringatan('peringatan3');
-        } else if (jumlah === 1) {
-          setStatusPeringatan('peringatan1');
-        } else {
-          setStatusPeringatan('peringatan2');
+      try {
+        const { data, error } = await supabase.rpc('catat_pelanggaran', { 
+          p_sesi_id: sesi!.id, 
+          p_tipe: tipe, 
+          p_keterangan: tipe === 'pindah_tab' ? 'Tab berpindah' : 'Browser blur' 
+        })
+        
+        if (error) {
+          console.error("Error dari database:", error)
+          return
         }
-        setShowPeringatan(true) 
+        
+        if (!data) return
+        console.log("CEK DATA RPC SUPABASE:", data)
+
+        let jumlah = 0;
+        const objData = Array.isArray(data) ? data[0] : data;
+
+        // Tangkap jika database menolak karena sesi tidak aktif
+        if (typeof objData === 'object' && objData !== null && objData.error) {
+            console.warn("Sistem menolak pencatatan:", objData.error);
+            router.replace('/selesai');
+            return; 
+        }
+
+        // Ekstrak angka pelanggaran
+        if (typeof objData === 'object' && objData !== null) {
+            jumlah = Number(objData.jumlah_pelanggaran);
+        } else if (typeof objData === 'number' || typeof objData === 'string') {
+            jumlah = Number(objData);
+        }
+
+        // Baca batas maksimal dari data ujian
+        const maksPelanggaran = (sesi?.ujian as any)?.maks_pelanggaran || 3;
+        const isAutoSubmit = jumlah >= maksPelanggaran;
+
+        setPelanggaranCount(jumlah)
+        
+        if (isAutoSubmit) { 
+          setStatusPeringatan('auto_submit');
+          setShowPeringatan(true); 
+          sudahSubmitRef.current = true; 
+          await syncJawaban(); 
+          setTimeout(() => router.replace('/selesai'), 3000) 
+        } else { 
+          if (jumlah === maksPelanggaran - 1) {
+            setStatusPeringatan('peringatan3');
+          } else if (jumlah === 1) {
+            setStatusPeringatan('peringatan1');
+          } else {
+            setStatusPeringatan('peringatan2');
+          }
+          setShowPeringatan(true) 
+        }
+      } catch (e) { 
+        console.error(e) 
       }
-    } catch (e) { 
-      console.error(e) 
     }
-  }
 
-      setPelanggaranCount(jumlah)
-      
-      if (autoSubmit) { 
-        setStatusPeringatan('auto_submit');
-        setShowPeringatan(true); 
-        sudahSubmitRef.current = true; 
-        await syncJawaban(); 
-        setTimeout(() => router.replace('/selesai'), 3000) 
-      } else { 
-        // Karena 'jumlah' sekarang dijamin tipe datanya angka berkat Number(), logika ini akan berjalan sempurna
-        setStatusPeringatan(jumlah === 1 ? 'peringatan1' : jumlah === 2 ? 'peringatan2' : 'peringatan3');
-        setShowPeringatan(true) 
-      }
-    } catch (e) { 
-      console.error(e) 
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null
+    let pendingTipe: 'pindah_tab' | 'blur_app' | null = null
+
+    function handlePelanggaran(tipe: 'pindah_tab' | 'blur_app') {
+      if (debounceTimer) return
+      pendingTipe = tipe
+      debounceTimer = setTimeout(() => {
+        if (pendingTipe) kirimPelanggaran(pendingTipe)
+        debounceTimer = null
+        pendingTipe = null
+      }, DEBOUNCE_MS)
     }
-  }
 
-  let debounceTimer: ReturnType<typeof setTimeout> | null = null
-  let pendingTipe: 'pindah_tab' | 'blur_app' | null = null
-
-  function handlePelanggaran(tipe: 'pindah_tab' | 'blur_app') {
-    // Event pertama dalam window debounce yang menang; event kedua (apapun
-    // tipenya) yang datang dalam DEBOUNCE_MS dianggap gema dari aksi yang sama.
-    if (debounceTimer) return
-    pendingTipe = tipe
-    debounceTimer = setTimeout(() => {
-      if (pendingTipe) kirimPelanggaran(pendingTipe)
-      debounceTimer = null
-      pendingTipe = null
-    }, DEBOUNCE_MS)
-  }
-
-  const onVisibility = () => { if (document.visibilityState === 'hidden') handlePelanggaran('pindah_tab') }
-  const onBlur = () => { if (document.visibilityState === 'visible') handlePelanggaran('blur_app') }
-  document.addEventListener('visibilitychange', onVisibility)
-  window.addEventListener('blur', onBlur)
-  return () => {
-    document.removeEventListener('visibilitychange', onVisibility)
-    window.removeEventListener('blur', onBlur)
-    if (debounceTimer) clearTimeout(debounceTimer)
-  }
-}, [loading, sesi, syncJawaban, router])
+    const onVisibility = () => { if (document.visibilityState === 'hidden') handlePelanggaran('pindah_tab') }
+    const onBlur = () => { if (document.visibilityState === 'visible') handlePelanggaran('blur_app') }
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('blur', onBlur)
+    
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('blur', onBlur)
+      if (debounceTimer) clearTimeout(debounceTimer)
+    }
+  }, [loading, sesi, syncJawaban, router])
  
   function handleJawab(soalId: string, jawaban: string) {
     setJawabanState((prev) => ({ ...prev, [soalId]: jawaban }))
@@ -424,12 +365,10 @@ export default function UjianPage() {
     } catch (err) { console.error(err); alert('Gagal submit. Coba lagi atau hubungi pengawas.'); setSubmitting(false); sudahSubmitRef.current = false }
   }
  
-  // ─── BARU: Halaman pernyataan (muncul sebelum ujian dimulai) ──────────────
   if (showAgreement && pendingDataRef.current) {
     const { ujian, mahasiswa } = pendingDataRef.current
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col">
-        {/* Header */}
         <div className="bg-white border-b border-gray-100 shadow-sm px-4 py-4">
           <p className="text-xs text-gray-400">INSTIPER Yogyakarta — FAPERTA</p>
           <p className="text-sm font-semibold text-gray-800 mt-0.5 truncate">{ujian?.judul}</p>
@@ -437,7 +376,6 @@ export default function UjianPage() {
         </div>
  
         <div className="flex-1 px-4 py-5 flex flex-col gap-4 overflow-hidden">
-          {/* Ikon + judul */}
           <div className="card text-center pt-6 pb-5">
             <div className="w-14 h-14 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-3">
               <svg className="w-7 h-7 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -449,7 +387,6 @@ export default function UjianPage() {
             <p className="text-xs text-gray-500 mt-1">Gulir & baca seluruh ketentuan sebelum memulai ujian</p>
           </div>
  
-          {/* Daftar poin — scrollable, trigger saat sampai bawah */}
           <div className="card flex-1 flex flex-col p-0 overflow-hidden min-h-0">
             <div
               ref={agreementScrollRef}
@@ -479,7 +416,6 @@ export default function UjianPage() {
             </div>
           </div>
  
-          {/* Checkbox + tombol */}
           <div className="card space-y-4">
             <label className={`flex items-start gap-3 text-sm ${sudahScrollAgreement ? 'text-gray-700 cursor-pointer' : 'text-gray-400 pointer-events-none'}`}>
               <input
@@ -504,7 +440,6 @@ export default function UjianPage() {
     )
   }
  
-  // ─── Loading spinner (sama seperti aslinya) ────────────────────────────────
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-gray-50">
@@ -533,7 +468,6 @@ export default function UjianPage() {
     >
       <div className="watermark" aria-hidden="true">{mahasiswaData?.nim} • {mahasiswaData?.nama}</div>
  
-      {/* HEADER */}
       <div className="sticky top-0 z-20 bg-white border-b border-gray-100 shadow-sm">
         <div className="px-4 py-3">
           <div className="flex items-center justify-between mb-2">
@@ -569,7 +503,6 @@ export default function UjianPage() {
         </div>
       </div>
  
-      {/* KONTEN SOAL */}
       <div className="flex-1 px-4 py-5 pb-32">
         <div className="card animate-fade-in" key={soalAktif.id}>
           <div className="flex items-center justify-between mb-4">
@@ -611,7 +544,6 @@ export default function UjianPage() {
         </div>
       </div>
  
-      {/* NAVIGASI BAWAH */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 px-4 py-4 z-20">
         <div className="flex items-center gap-3">
           <button onClick={() => handleNavigasiSoal(Math.max(0, indeksSoalAktif - 1))} disabled={indeksSoalAktif === 0} className="btn-secondary px-4 py-3">
@@ -627,7 +559,7 @@ export default function UjianPage() {
         </div>
       </div>
  
-      {/* POPUP IDLE */}
+      {}
       {showIdlePopup && (
         <div className="overlay animate-fade-in">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm text-center shadow-2xl">
@@ -639,13 +571,12 @@ export default function UjianPage() {
         </div>
       )}
  
-      {/* POPUP PERINGATAN */}
       {showPeringatan && statusPeringatan !== 'idle' && statusPeringatan !== 'auto_submit' && (
         <div className="overlay animate-fade-in">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl border-t-4 border-t-red-500">
             <div className="text-center mb-4">
               <div className="text-4xl mb-2">{statusPeringatan === 'peringatan1' ? '⚠️' : statusPeringatan === 'peringatan2' ? '🚨' : '🔴'}</div>
-              <h3 className="font-bold text-red-700 text-lg">{statusPeringatan === 'peringatan1' ? 'Peringatan Pertama' : statusPeringatan === 'peringatan2' ? 'Peringatan Kedua!' : 'PERINGATAN TERAKHIR!'}</h3>
+              <h3 className="font-bold text-red-700 text-lg">{statusPeringatan === 'peringatan1' ? 'Peringatan Pertama' : statusPeringatan === 'peringatan2' ? 'Peringatan Lanjutan!' : 'PERINGATAN TERAKHIR!'}</h3>
             </div>
             <p className="text-gray-700 text-sm leading-relaxed mb-2 text-center">
               {statusPeringatan === 'peringatan1' ? 'Perpindahan dari halaman ujian terdeteksi. Aktivitas ini telah dicatat.'
@@ -662,7 +593,6 @@ export default function UjianPage() {
         </div>
       )}
  
-      {/* POPUP AUTO-SUBMIT */}
       {statusPeringatan === 'auto_submit' && (
         <div className="overlay">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl border-t-4 border-t-gray-800 text-center">
@@ -674,7 +604,6 @@ export default function UjianPage() {
         </div>
       )}
  
-      {/* POPUP KONFIRMASI KIRIM */}
       {showKonfirmasiSubmit && (
         <div className="overlay animate-fade-in">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
