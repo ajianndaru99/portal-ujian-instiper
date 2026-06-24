@@ -32,6 +32,7 @@ function formatWaktu(iso: string): string {
 function hitungDurasi(mulai: string, selesai: string): string {
   if (!mulai || !selesai) return '-'
   const ms = new Date(selesai).getTime() - new Date(mulai).getTime()
+  if (ms <= 0) return '-'   // ← tambah ini, hindari durasi negatif
   const totalMenit = Math.floor(ms / 60000)
   const jam = Math.floor(totalMenit / 60)
   const menit = totalMenit % 60
@@ -77,6 +78,8 @@ export default function SelesaiPage() {
     // Debug sementara - hapus setelah fix
     console.log('STRUKTUR SESI:', JSON.stringify(sesi, null, 2))
     console.log('ERROR:', error)
+    console.log('waktu_mulai:', sesi.waktu_mulai)
+    console.log('waktu_selesai:', sesi.waktu_selesai)
 
     if (!sesi) { setLoading(false); return }
 
