@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+// Import Server Action baru
+import { prosesLoginUjian } from '@/app/actions/auth'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -20,85 +21,21 @@ export default function LoginPage() {
     setError('')
 
     try {
-      // 1. Cari ujian berdasarkan kode
-      const { data: ujian, error: errUjian } = await supabase
-        .from('ujian')
-        .select(`
-          *,
-          mata_kuliah (
-            id, kode_matkul, nama_matkul, sks,
-            dosen ( id, kode_dosen, nama )
-          )
-        `)
-        .eq('kode_ujian', kodeUjian.toUpperCase().trim())
-        .eq('status', 'aktif')
-        .single()
+      // Panggil Server Action (menjalankan query aman di server)
+      const hasil = await prosesLoginUjian(nim, kodeUjian)
 
-      if (errUjian || !ujian) {
-        setError('Kode ujian tidak ditemukan atau ujian belum aktif.')
+      // Jika ada pesan error dari validasi server
+      if (!hasil.success) {
+        setError(hasil.error as string)
+        setLoading(false)
         return
       }
 
-      // 2. Cari mahasiswa
-      const { data: mahasiswa, error: errMhs } = await supabase
-        .from('mahasiswa')
-        .select('*')
-        .eq('nim', nim.trim())
-        .eq('is_active', true)
-        .single()
-
-      if (errMhs || !mahasiswa) {
-        setError('NIM tidak ditemukan atau akun tidak aktif.')
-        return
-      }
-
-      // 3. Cek apakah mahasiswa terdaftar (prodi/minat match)
-      const minatMatch =
-        ujian.minat_target.length === 0 ||
-        ujian.minat_target.includes(mahasiswa.minat)
-      if (ujian.prodi_target !== mahasiswa.prodi || !minatMatch) {
-        setError('Kamu tidak terdaftar untuk ujian ini.')
-        return
-      }
-
-      // 4. Ambil atau buat sesi ujian
-      let { data: sesi, error: errSesi } = await supabase
-        .from('sesi_ujian')
-        .select('*')
-        .eq('ujian_id', ujian.id)
-        .eq('nim', mahasiswa.nim)
-        .single()
-
-      if (errSesi && errSesi.code === 'PGRST116') {
-        // Belum ada sesi, buat baru
-        const { data: sesiBaru, error: errBuat } = await supabase
-          .from('sesi_ujian')
-          .insert({
-            ujian_id: ujian.id,
-            nim: mahasiswa.nim,
-            status: 'belum_mulai',
-          })
-          .select()
-          .single()
-
-        if (errBuat || !sesiBaru) {
-          setError('Gagal membuat sesi ujian. Coba lagi.')
-          return
-        }
-        sesi = sesiBaru
-      } else if (errSesi) {
-        setError('Gagal memverifikasi sesi. Coba lagi.')
-        return
-      }
-
-      // 5. Cek apakah sudah selesai
-      if (['selesai', 'auto_submit', 'paksa_submit'].includes(sesi!.status)) {
-        setError('Ujian kamu sudah dikumpulkan sebelumnya.')
-        return
-      }
+      // Jika berhasil, ekstrak datanya
+      const { ujian, mahasiswa, sesi } = hasil.data!
 
       // 6. Simpan data ke sessionStorage & redirect ke halaman ujian
-      sessionStorage.setItem('sesi_token', sesi!.token_sesi)
+      sessionStorage.setItem('sesi_token', sesi.token_sesi)
       sessionStorage.setItem('mahasiswa_data', JSON.stringify(mahasiswa))
       sessionStorage.setItem('ujian_data', JSON.stringify(ujian))
 
