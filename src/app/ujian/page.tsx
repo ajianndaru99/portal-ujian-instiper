@@ -256,7 +256,6 @@ export default function UjianPage() {
         p_keterangan: tipe === 'pindah_tab' ? 'Tab berpindah' : 'Browser blur' 
       })
       
-      // Jika RPC gagal dieksekusi di database, hentikan proses
       if (error) {
         console.error("Error dari database:", error)
         return
@@ -264,14 +263,28 @@ export default function UjianPage() {
       
       if (!data) return
 
-      // --- PERBAIKAN UTAMA DI SINI ---
-      // Amankan bentuk data: Jika Supabase mengembalikan Array, ambil item pertamanya.
+      // --- DEBUGGING: Tampilkan isi asli dari database di Console browser ---
+      console.log("CEK DATA RPC SUPABASE:", data)
+      // ----------------------------------------------------------------------
+
+      // --- PERBAIKAN PARSING DATA ---
+      let jumlah = 0;
+      let autoSubmit = false;
+
+      // Amankan bentuk data: Jika Supabase mengembalikan Array, ambil item pertamanya
       const objData = Array.isArray(data) ? data[0] : data;
 
-      // Ekstrak angka dengan aman
-      const jumlah = typeof objData === 'number' ? objData : objData.jumlah_pelanggaran;
-      const autoSubmit = typeof objData === 'number' ? jumlah >= 3 : objData.auto_submit;
-      // -------------------------------
+      // Jika database merespons bentuk Objek (contoh: { jumlah_pelanggaran: "1", auto_submit: false })
+      if (typeof objData === 'object' && objData !== null) {
+          // Gunakan fungsi Number() agar string "1" paksa diubah menjadi angka 1
+          jumlah = Number(objData.jumlah_pelanggaran);
+          autoSubmit = Boolean(objData.auto_submit);
+      } 
+      // Jika database merespons langsung angka mentah (contoh: 1 atau "1")
+      else if (typeof objData === 'number' || typeof objData === 'string') {
+          jumlah = Number(objData);
+          autoSubmit = jumlah >= 3; 
+      }
 
       setPelanggaranCount(jumlah)
       
@@ -282,6 +295,7 @@ export default function UjianPage() {
         await syncJawaban(); 
         setTimeout(() => router.replace('/selesai'), 3000) 
       } else { 
+        // Karena 'jumlah' sekarang dijamin tipe datanya angka berkat Number(), logika ini akan berjalan sempurna
         setStatusPeringatan(jumlah === 1 ? 'peringatan1' : jumlah === 2 ? 'peringatan2' : 'peringatan3');
         setShowPeringatan(true) 
       }
