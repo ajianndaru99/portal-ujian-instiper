@@ -235,23 +235,34 @@ export default function AdminRekapPage() {
       const soalPG = soalList.filter(s => s.tipe === 'pg')
       const soalEsai = soalList.filter(s => s.tipe === 'esai')
 
-      // Sheet 1: Jawaban Lengkap — Nama, NIM, jawaban PG per nomor, jawaban esai per nomor, total nilai
+      // --- PERSIAPAN SHEET 1: JAWABAN LENGKAP ---
+      // 1. Kumpulkan data
       const dataJawaban = filtered.map((r, i) => {
-        const row: Record<string, any> = { 'No': i + 1, 'Nama Mahasiswa': r.nama_mahasiswa, 'NIM': r.nim }
-        soalPG.forEach(s => {
-          row[`PG ${s.nomor_urut}`] = jawabanMap[r.sesi_id]?.[s.id]?.jawaban_mahasiswa || '-'
-        })
-        soalEsai.forEach(s => {
-          row[`Esai ${s.nomor_urut}`] = jawabanMap[r.sesi_id]?.[s.id]?.jawaban_mahasiswa || '(tidak dijawab)'
-        })
-        row['Nilai PG'] = r.nilai_pg !== null ? Number(r.nilai_pg.toFixed(2)) : '-'
+        const row: Record<string, any> = { 
+          'No': i + 1, 
+          'Nama Mahasiswa': r.nama_mahasiswa, 
+          'Nilai PG': r.nilai_pg !== null ? Number(r.nilai_pg.toFixed(2)) : '-',
+          'NIM': r.nim,
+          'Kelas': r.kelas || '-'
+        }
+        
+        soalPG.forEach(s => { row[`PG ${s.nomor_urut}`] = jawabanMap[r.sesi_id]?.[s.id]?.jawaban_mahasiswa || '-' })
+        soalEsai.forEach(s => { row[`Esai ${s.nomor_urut}`] = jawabanMap[r.sesi_id]?.[s.id]?.jawaban_mahasiswa || '(tidak dijawab)' })
+        
         row['Nilai Esai'] = r.nilai_esai !== null ? Number(r.nilai_esai.toFixed(2)) : '-'
         row['Nilai Final'] = r.nilai_final !== null ? Number(r.nilai_final.toFixed(2)) : '-'
         row['Huruf Mutu'] = nilaiKeHuruf(r.nilai_final)
         return row
       })
 
-      // Sheet 2: Detail & Kecurangan — semua info administratif
+      // 2. KUNCI UTAMA: Paksa urutan Header Kolom agar Excel tidak ngawur
+      const headerSheet1 = ['No', 'Nama Mahasiswa', 'Nilai PG', 'NIM', 'Kelas']
+      soalPG.forEach(s => headerSheet1.push(`PG ${s.nomor_urut}`))
+      soalEsai.forEach(s => headerSheet1.push(`Esai ${s.nomor_urut}`))
+      headerSheet1.push('Nilai Esai', 'Nilai Final', 'Huruf Mutu')
+
+
+      // --- PERSIAPAN SHEET 2: DETAIL & KECURANGAN ---
       const dataDetail = filtered.map((r, i) => ({
         'No': i + 1, 'NIM': r.nim, 'Nama Mahasiswa': r.nama_mahasiswa,
         'Prodi': r.prodi, 'Minat': r.minat, 'Kelas': r.kelas, 'Angkatan': r.angkatan,
@@ -260,12 +271,12 @@ export default function AdminRekapPage() {
         'Keterangan': r.jumlah_pelanggaran >= 3 ? 'Diskualifikasi/Auto-submit kecurangan' : r.jumlah_pelanggaran > 0 ? 'Ada indikasi pelanggaran' : 'Bersih',
       }))
 
+      // --- PERSIAPAN SHEET 3: STATISTIK ---
       const selesai = rekap.filter(r => ['selesai','auto_submit','paksa_submit'].includes(r.status))
       const nilaiValid = selesai.map(r => r.nilai_final).filter((n): n is number => n !== null)
       const rataRata = nilaiValid.length > 0 ? nilaiValid.reduce((a,b) => a+b, 0) / nilaiValid.length : 0
       const lulus = nilaiValid.filter(n => n >= 55).length
 
-      // Sheet 3: Statistik
       const dataStatistik = [
         { 'Keterangan': 'Nama Ujian', 'Nilai': ujian?.judul || '' },
         { 'Keterangan': 'Mata Kuliah', 'Nilai': rekap[0]?.nama_matkul || '' },
@@ -283,27 +294,35 @@ export default function AdminRekapPage() {
         { 'Keterangan': 'Auto-submit', 'Nilai': rekap.filter(r => r.status === 'auto_submit').length },
       ]
 
+      // --- PROSES PEMBUATAN FILE EXCEL ---
       const wb = XLSX.utils.book_new()
 
-      const wsJawaban = XLSX.utils.json_to_sheet(dataJawaban)
-      const colWidthsJawaban = [{ wch: 4 }, { wch: 25 }, { wch: 12 }]
+      // Buat Sheet 1 (Gunakan header yang sudah dipaksa urutannya)
+      const wsJawaban = XLSX.utils.json_to_sheet(dataJawaban, { header: headerSheet1 })
+      const colWidthsJawaban = [{ wch: 4 }, { wch: 28 }, { wch: 10 }, { wch: 12 }, { wch: 8 }] 
       soalPG.forEach(() => colWidthsJawaban.push({ wch: 8 }))
       soalEsai.forEach(() => colWidthsJawaban.push({ wch: 40 }))
-      colWidthsJawaban.push({ wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 })
+      colWidthsJawaban.push({ wch: 10 }, { wch: 10 }, { wch: 10 }) 
       wsJawaban['!cols'] = colWidthsJawaban
       XLSX.utils.book_append_sheet(wb, wsJawaban, 'Jawaban Lengkap')
 
+      // Buat Sheet 2
       const wsDetail = XLSX.utils.json_to_sheet(dataDetail)
       wsDetail['!cols'] = [{ wch: 4 },{ wch: 12 },{ wch: 25 },{ wch: 14 },{ wch: 8 },{ wch: 7 },{ wch: 9 },{ wch: 16 },{ wch: 16 },{ wch: 16 },{ wch: 12 },{ wch: 28 }]
       XLSX.utils.book_append_sheet(wb, wsDetail, 'Detail & Kecurangan')
 
+      // Buat Sheet 3
       const wsStatistik = XLSX.utils.json_to_sheet(dataStatistik)
       wsStatistik['!cols'] = [{ wch: 28 },{ wch: 35 }]
       XLSX.utils.book_append_sheet(wb, wsStatistik, 'Statistik')
 
       XLSX.writeFile(wb, `${namaFile}.xlsx`)
-    } catch (err) { console.error(err); alert('Gagal export.') }
-    finally { setExporting(false) }
+    } catch (err) { 
+      console.error(err);
+      alert('Gagal export.') 
+    } finally { 
+      setExporting(false) 
+    }
   }
 
   const filtered = rekap.filter(r => {
