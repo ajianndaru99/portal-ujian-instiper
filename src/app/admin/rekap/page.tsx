@@ -236,12 +236,11 @@ export default function AdminRekapPage() {
       const soalEsai = soalList.filter(s => s.tipe === 'esai')
 
       // --- PERSIAPAN SHEET 1: JAWABAN LENGKAP ---
-      // 1. Kumpulkan data
       const dataJawaban = filtered.map((r, i) => {
         const row: Record<string, any> = { 
           'No': i + 1, 
           'Nama Mahasiswa': r.nama_mahasiswa, 
-          'NIM': Number(r.nim), 
+          'NIM': Number(r.nim), // NIM sudah otomatis menjadi format Angka
           'Minat': r.minat || '-',
           'Kelas': r.kelas || '-',
           'Nilai PG': r.nilai_pg !== null ? Number(r.nilai_pg.toFixed(2)) : '-'
@@ -253,14 +252,20 @@ export default function AdminRekapPage() {
         row['Nilai Esai'] = r.nilai_esai !== null ? Number(r.nilai_esai.toFixed(2)) : '-'
         row['Nilai Final'] = r.nilai_final !== null ? Number(r.nilai_final.toFixed(2)) : '-'
         row['Huruf Mutu'] = nilaiKeHuruf(r.nilai_final)
+        
+        // LOGIKA MATEMATIKA: Menghitung jumlah soal benar dari persentase Nilai PG
+        row['Jumlah Benar'] = r.nilai_pg !== null ? Math.round((r.nilai_pg / 100) * soalPG.length) : 0
+        
         return row
       })
 
-      // 2. KUNCI UTAMA: Paksa urutan Header Kolom agar Excel tidak ngawur
+      // KUNCI UTAMA: Paksa urutan Header Kolom
       const headerSheet1 = ['No', 'Nama Mahasiswa', 'NIM', 'Minat', 'Kelas', 'Nilai PG']
       soalPG.forEach(s => headerSheet1.push(`PG ${s.nomor_urut}`))
       soalEsai.forEach(s => headerSheet1.push(`Esai ${s.nomor_urut}`))
-      headerSheet1.push('Nilai Esai', 'Nilai Final', 'Huruf Mutu')
+      
+      // Menambahkan kolom "Jumlah Benar" di urutan paling akhir
+      headerSheet1.push('Nilai Esai', 'Nilai Final', 'Huruf Mutu', 'Jumlah Benar')
 
       // --- PERSIAPAN SHEET 2: DETAIL & KECURANGAN ---
       const dataDetail = filtered.map((r, i) => ({
@@ -297,15 +302,15 @@ export default function AdminRekapPage() {
       // --- PROSES PEMBUATAN FILE EXCEL ---
       const wb = XLSX.utils.book_new()
 
-      // Buat Sheet 1 (Gunakan header yang sudah dipaksa urutannya)
+      // Buat Sheet 1
       const wsJawaban = XLSX.utils.json_to_sheet(dataJawaban, { header: headerSheet1 })
       
-      // Sesuaikan lebar kolom: No(4), Nama(28), NIM(12), Minat(14), Kelas(8), Nilai PG(10)
       const colWidthsJawaban = [{ wch: 4 }, { wch: 28 }, { wch: 12 }, { wch: 14 }, { wch: 8 }, { wch: 10 }] 
-      
       soalPG.forEach(() => colWidthsJawaban.push({ wch: 8 }))
       soalEsai.forEach(() => colWidthsJawaban.push({ wch: 40 }))
-      colWidthsJawaban.push({ wch: 10 }, { wch: 10 }, { wch: 10 }) 
+      
+      // Tambahkan wch: 14 di belakang untuk ruang kolom Jumlah Benar
+      colWidthsJawaban.push({ wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 14 }) 
       wsJawaban['!cols'] = colWidthsJawaban
       XLSX.utils.book_append_sheet(wb, wsJawaban, 'Jawaban Lengkap')
 
