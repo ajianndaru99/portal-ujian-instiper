@@ -98,6 +98,7 @@ export default function AdminRekapPage() {
           ujian(judul, mata_kuliah(nama_matkul, dosen(nama)))`)
         .eq('ujian_id', ujianId)
         .order('nim')
+        .limit(5000)
 
       if (!sesiList) { setLoading(false); return }
 
@@ -133,9 +134,10 @@ export default function AdminRekapPage() {
       const sesiIds = rows.map(r => r.sesi_id)
       if (sesiIds.length > 0 && soalData && soalData.length > 0) {
         const { data: jawabanData } = await supabase
-          .from('jawaban')
-          .select('id, sesi_id, soal_id, jawaban_mahasiswa, nilai_esai, catatan_esai')
-          .in('sesi_id', sesiIds)
+        .from('jawaban')
+        .select('id, sesi_id, soal_id, jawaban_mahasiswa, nilai_esai, catatan_esai')
+        .in('sesi_id', sesiIds)
+        .limit(10000) 
 
         const map: Record<string, Record<string, JawabanDetail>> = {}
         const initEdit: Record<string, { nilai: string; catatan: string }> = {}
