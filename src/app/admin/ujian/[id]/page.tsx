@@ -153,6 +153,21 @@ export default function UjianDetailPage() {
     setSoalList(normalized)
     setMatkulList(m || [])
     setLoading(false)
+    
+    useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // Menampilkan pop-up konfirmasi bawaan browser saat tab/browser mencoba ditutup
+      e.preventDefault();
+      e.returnValue = ''; 
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
+    // Bersihkan event listener saat komponen tidak lagi digunakan (ujian selesai)
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, []);
   }
 
   // ============================================================
