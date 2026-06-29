@@ -241,9 +241,10 @@ export default function AdminRekapPage() {
         const row: Record<string, any> = { 
           'No': i + 1, 
           'Nama Mahasiswa': r.nama_mahasiswa, 
-          'Nilai PG': r.nilai_pg !== null ? Number(r.nilai_pg.toFixed(2)) : '-',
           'NIM': r.nim,
-          'Kelas': r.kelas || '-'
+          'Minat': r.minat || '-',
+          'Kelas': r.kelas || '-',
+          'Nilai PG': r.nilai_pg !== null ? Number(r.nilai_pg.toFixed(2)) : '-'
         }
         
         soalPG.forEach(s => { row[`PG ${s.nomor_urut}`] = jawabanMap[r.sesi_id]?.[s.id]?.jawaban_mahasiswa || '-' })
@@ -256,11 +257,10 @@ export default function AdminRekapPage() {
       })
 
       // 2. KUNCI UTAMA: Paksa urutan Header Kolom agar Excel tidak ngawur
-      const headerSheet1 = ['No', 'Nama Mahasiswa', 'Nilai PG', 'NIM', 'Kelas']
+      const headerSheet1 = ['No', 'Nama Mahasiswa', 'NIM', 'Minat', 'Kelas', 'Nilai PG']
       soalPG.forEach(s => headerSheet1.push(`PG ${s.nomor_urut}`))
       soalEsai.forEach(s => headerSheet1.push(`Esai ${s.nomor_urut}`))
       headerSheet1.push('Nilai Esai', 'Nilai Final', 'Huruf Mutu')
-
 
       // --- PERSIAPAN SHEET 2: DETAIL & KECURANGAN ---
       const dataDetail = filtered.map((r, i) => ({
@@ -299,7 +299,10 @@ export default function AdminRekapPage() {
 
       // Buat Sheet 1 (Gunakan header yang sudah dipaksa urutannya)
       const wsJawaban = XLSX.utils.json_to_sheet(dataJawaban, { header: headerSheet1 })
-      const colWidthsJawaban = [{ wch: 4 }, { wch: 28 }, { wch: 10 }, { wch: 12 }, { wch: 8 }] 
+      
+      // Sesuaikan lebar kolom: No(4), Nama(28), NIM(12), Minat(14), Kelas(8), Nilai PG(10)
+      const colWidthsJawaban = [{ wch: 4 }, { wch: 28 }, { wch: 12 }, { wch: 14 }, { wch: 8 }, { wch: 10 }] 
+      
       soalPG.forEach(() => colWidthsJawaban.push({ wch: 8 }))
       soalEsai.forEach(() => colWidthsJawaban.push({ wch: 40 }))
       colWidthsJawaban.push({ wch: 10 }, { wch: 10 }, { wch: 10 }) 
