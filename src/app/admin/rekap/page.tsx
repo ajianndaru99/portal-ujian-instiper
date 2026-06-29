@@ -241,7 +241,7 @@ export default function AdminRekapPage() {
         const row: Record<string, any> = { 
           'No': i + 1, 
           'Nama Mahasiswa': r.nama_mahasiswa, 
-          'NIM': r.nim,
+          'NIM': Number(r.nim), 
           'Minat': r.minat || '-',
           'Kelas': r.kelas || '-',
           'Nilai PG': r.nilai_pg !== null ? Number(r.nilai_pg.toFixed(2)) : '-'
@@ -264,7 +264,7 @@ export default function AdminRekapPage() {
 
       // --- PERSIAPAN SHEET 2: DETAIL & KECURANGAN ---
       const dataDetail = filtered.map((r, i) => ({
-        'No': i + 1, 'NIM': r.nim, 'Nama Mahasiswa': r.nama_mahasiswa,
+        'No': i + 1, 'NIM': Number(r.nim), 'Nama Mahasiswa': r.nama_mahasiswa,
         'Prodi': r.prodi, 'Minat': r.minat, 'Kelas': r.kelas, 'Angkatan': r.angkatan,
         'Status': r.status, 'Waktu Mulai': formatWaktu(r.waktu_mulai), 'Waktu Selesai': formatWaktu(r.waktu_selesai),
         'Pelanggaran': r.jumlah_pelanggaran,
