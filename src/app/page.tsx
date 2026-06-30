@@ -11,10 +11,15 @@ export default function LoginPage() {
   const [kodeUjian, setKodeUjian] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [bukanPrivateMode, setBukanPrivateMode] = useState(false)
 
   async function handleMasuk() {
     if (!nim.trim() || !kodeUjian.trim()) {
       setError('NIM dan Kode Ujian harus diisi.')
+      return
+    }
+    if (!bukanPrivateMode) {
+      setError('Mohon konfirmasi bahwa kamu tidak menggunakan Private Mode (centang kotak peringatan).')
       return
     }
     setLoading(true)
@@ -106,6 +111,25 @@ export default function LoginPage() {
                 maxLength={6}
                 autoComplete="off"
               />
+            </div>
+
+            {/* Peringatan Private Mode */}
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mt-4">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={bukanPrivateMode}
+                  onChange={(e) => {
+                    setBukanPrivateMode(e.target.checked)
+                    setError('')
+                  }}
+                  className="mt-0.5 w-4 h-4 accent-amber-600 flex-shrink-0"
+                />
+                <span className="text-xs text-amber-800 leading-relaxed font-medium">
+                  Saya pastikan <strong>TIDAK</strong> menggunakan Mode Samaran (Incognito / Private Browsing). <br/>
+                  <span className="text-amber-600/80 text-[10px]">Jika menggunakan Private Mode, jawaban akan HILANG jika terjadi gangguan sinyal.</span>
+                </span>
+              </label>
             </div>
 
             {error && (
