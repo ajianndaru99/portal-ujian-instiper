@@ -4,10 +4,12 @@ import { createClient } from '@supabase/supabase-js'
 // ⚠️ Gunakan Service Role Key (bukan anon key!)
 // Tambahkan SUPABASE_SERVICE_ROLE_KEY di file .env.local
 // Ambil dari: Supabase Dashboard → Settings → API → service_role key
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+function getSupabaseAdmin() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL || 'http://localhost',
+    process.env.SUPABASE_SERVICE_ROLE_KEY || 'dummy-key-for-build'
+  )
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -19,6 +21,7 @@ export async function POST(req: NextRequest) {
 
     // 1. Kirim email undangan via Supabase Auth
     //    Admin baru akan menerima link untuk mengatur password sendiri
+    const supabaseAdmin = getSupabaseAdmin()
     const { data: authData, error: authError } =
       await supabaseAdmin.auth.admin.inviteUserByEmail(email.trim(), {
         data: { nama: nama.trim() },

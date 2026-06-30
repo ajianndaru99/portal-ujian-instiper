@@ -9,8 +9,8 @@ import { Ratelimit } from '@upstash/ratelimit'
 // ============================================================
 
 const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL!,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+  url: process.env.UPSTASH_REDIS_REST_URL || 'https://fallback.upstash.io',
+  token: process.env.UPSTASH_REDIS_REST_TOKEN || 'fallback',
 })
 
 // Rate limit: 30 requests per minute per IP
@@ -50,8 +50,8 @@ export async function GET(request: NextRequest) {
 
   // 2. Cache miss → ambil dari Supabase
   const supabaseAdmin = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.NEXT_PUBLIC_SUPABASE_URL || 'http://localhost',
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'fallback'
   )
   const { data: soalDB, error } = await supabaseAdmin
     .from('soal')
