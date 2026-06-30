@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import * as Sentry from '@sentry/nextjs'
 import { createClientMahasiswa } from '@/lib/supabase-mahasiswa'
 import { Soal, SesiUjian } from '@/lib/types'
 import {
@@ -165,7 +166,11 @@ export default function UjianPage() {
       setPelanggaranCount(sesiDB.jumlah_pelanggaran)
       setSisaDetik(hitungSisaDetik(sesiDB.waktu_mulai, ujian.durasi_menit))
       setLoading(false)
-    } catch (err) { console.error(err); alert('Gagal memuat ujian. Hubungi pengawas.') }
+    } catch (err) { 
+      console.error(err); 
+      Sentry.captureException(err, { extra: { context: 'loadUjian' } });
+      alert('Gagal memuat ujian. Hubungi pengawas.') 
+    }
   }
 
   async function handleSetuju() {
@@ -258,7 +263,10 @@ export default function UjianPage() {
         if (error) throw error
       })
       tandaiSudahSync(sesiLokal, belumSync)
-    } catch (e) { console.error('Sync gagal:', e) } finally { isSyncingRef.current = false }
+    } catch (e) { 
+      console.error('Sync gagal:', e);
+      Sentry.captureException(e, { extra: { context: 'syncJawaban' } });
+    } finally { isSyncingRef.current = false }
   }, [sesi])
 
   const resetIdleTimer = useCallback(() => {

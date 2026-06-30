@@ -27,6 +27,14 @@ export default function AdminDashboardPage() {
 
   useEffect(() => { checkAuth() }, [])
 
+  // Auto refresh live monitor every 15 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadMonitor()
+    }, 15_000)
+    return () => clearInterval(interval)
+  }, [])
+
   async function checkAuth() {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) { router.replace('/admin'); return }

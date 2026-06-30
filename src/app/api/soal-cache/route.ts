@@ -1,65 +1,49 @@
-import { createClient } from '@supabase/supabase-js'
+import { Redis } from '@upstash/redis'
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 
 // ============================================================
-// Server-side Question Cache
-// ============================================================
-// Instead of 300 students each querying Supabase for questions,
-// this API route fetches once and caches the result in memory
-// with a 60-second TTL. All students hit this endpoint instead.
-// Effect: 300 DB connections → 1 DB connection for questions.
+// Server-side Question Cache (Upstash Redis)
 // ============================================================
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL!,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+})
 
-interface CacheEntry {
-  data: any[]
-  timestamp: number
-}
-
-const CACHE_TTL_MS = 60_000 // 60 seconds
-const soalCache = new Map<string, CacheEntry>()
-
-function getCached(ujianId: string): any[] | null {
-  const entry = soalCache.get(ujianId)
-  if (!entry) return null
-  if (Date.now() - entry.timestamp > CACHE_TTL_MS) {
-    soalCache.delete(ujianId)
-    return null
-  }
-  return entry.data
-}
-
-function setCache(ujianId: string, data: any[]) {
-  soalCache.set(ujianId, { data, timestamp: Date.now() })
-}
+const CACHE_TTL_SECONDS = 300 // 5 minutes
 
 export async function GET(request: NextRequest) {
   const ujianId = request.nextUrl.searchParams.get('ujian_id')
+  if (!ujianId) return NextResponse.json({ error: 'ujian_id required' }, { status: 400 })
 
-  if (!ujianId) {
-    return NextResponse.json({ error: 'ujian_id is required' }, { status: 400 })
+  const cacheKey = `soal:${ujianId}`
+
+  try {
+    // 1. Cek Redis
+    const cached = await redis.get(cacheKey)
+    if (cached) {
+      return NextResponse.json({ data: cached, cached: true }, {
+        headers: { 'Cache-Control': 'public, max-age=60, s-maxage=300' }
+      })
+    }
+  } catch (err) {
+    console.error('Redis cache error:', err)
+    // Lanjut ke DB jika Redis error (fallback)
   }
 
-  // Check cache first
-  const cached = getCached(ujianId)
-  if (cached) {
-    return NextResponse.json({ data: cached, cached: true })
-  }
-
-  // Cache miss — fetch from Supabase (only happens once per 60s)
+  // 2. Cache miss → ambil dari Supabase
+  const supabaseAdmin = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
   const { data: soalDB, error } = await supabaseAdmin
     .from('soal')
     .select('id, ujian_id, nomor_urut, pertanyaan, tipe, opsi_jawaban, bobot_nilai')
     .eq('ujian_id', ujianId)
     .order('nomor_urut')
 
-  if (error) {
-    return NextResponse.json({ error: 'Gagal memuat soal' }, { status: 500 })
-  }
+  if (error) return NextResponse.json({ error: 'Gagal memuat soal' }, { status: 500 })
 
   // Normalize opsi_jawaban
   const normalized = (soalDB || []).map((s: any) => ({
@@ -71,8 +55,14 @@ export async function GET(request: NextRequest) {
         : s.opsi_jawaban),
   }))
 
-  // Store in cache
-  setCache(ujianId, normalized)
+  try {
+    // 3. Simpan ke Redis dengan TTL 5 menit
+    await redis.setex(cacheKey, CACHE_TTL_SECONDS, JSON.stringify(normalized))
+  } catch (err) {
+    console.error('Redis cache set error:', err)
+  }
 
-  return NextResponse.json({ data: normalized, cached: false })
+  return NextResponse.json({ data: normalized, cached: false }, {
+    headers: { 'Cache-Control': 'public, max-age=60, s-maxage=300' }
+  })
 }

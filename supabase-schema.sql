@@ -31,6 +31,27 @@ CREATE TABLE IF NOT EXISTS soal (
 -- Indeks
 CREATE INDEX IF NOT EXISTS idx_soal_ujian_id ON soal(ujian_id);
 
+-- ============================================
+-- CRITICAL INDEXES FOR SCALABILITY
+-- ============================================
+
+-- sesi_ujian
+CREATE INDEX IF NOT EXISTS idx_sesi_token_sesi ON sesi_ujian(token_sesi);
+CREATE INDEX IF NOT EXISTS idx_sesi_nim ON sesi_ujian(nim);
+CREATE INDEX IF NOT EXISTS idx_sesi_ujian_id ON sesi_ujian(ujian_id);
+CREATE INDEX IF NOT EXISTS idx_sesi_ujian_nim_composite ON sesi_ujian(ujian_id, nim);
+
+-- jawaban
+CREATE INDEX IF NOT EXISTS idx_jawaban_sesi_id ON jawaban(sesi_id);
+CREATE INDEX IF NOT EXISTS idx_jawaban_sesi_soal ON jawaban(sesi_id, soal_id);
+
+-- log_aktivitas
+CREATE INDEX IF NOT EXISTS idx_log_sesi_id ON log_aktivitas(sesi_id);
+CREATE INDEX IF NOT EXISTS idx_log_ujian_id ON log_aktivitas(ujian_id);
+
+-- mahasiswa
+CREATE INDEX IF NOT EXISTS idx_mahasiswa_nim ON mahasiswa(nim);
+
 -- ── Data Contoh (opsional, hapus jika tidak diperlukan) ──────────────────────
 
 INSERT INTO ujian (judul, kode_ujian, status) VALUES
