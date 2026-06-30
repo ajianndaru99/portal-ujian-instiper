@@ -345,7 +345,7 @@ export default function UjianPage() {
       }
     }
 
-    const GRACE_PERIOD_MS = 5000 // 5 detik untuk memberi waktu jika siswa membuka Control Center/Notifikasi
+    const GRACE_PERIOD_MS = 3000 // 3 detik untuk memberi waktu jika siswa membuka Control Center/Notifikasi
 
     let violationTimer: ReturnType<typeof setTimeout> | null = null
 
