@@ -168,3 +168,37 @@ export function nilaiKeHuruf(nilai: number): string {
   if (nilai >= 35) return 'D'
   return 'E'
 }
+
+// ============================================================
+// RETRY UTILITY
+// ============================================================
+
+/**
+ * Wrap an async function with exponential backoff retry logic.
+ * Used to handle transient Supabase connection failures when
+ * the free tier pooler is temporarily full.
+ *
+ * @param fn - Async function to retry
+ * @param maxRetries - Maximum number of retries (default: 3)
+ * @param baseDelayMs - Base delay in ms, doubles each retry (default: 2000)
+ */
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 3,
+  baseDelayMs: number = 2000
+): Promise<T> {
+  let lastError: unknown
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn()
+    } catch (err) {
+      lastError = err
+      if (attempt < maxRetries) {
+        const delay = baseDelayMs * Math.pow(2, attempt)
+        console.warn(`Retry ${attempt + 1}/${maxRetries} in ${delay}ms...`, err)
+        await new Promise((resolve) => setTimeout(resolve, delay))
+      }
+    }
+  }
+  throw lastError
+}

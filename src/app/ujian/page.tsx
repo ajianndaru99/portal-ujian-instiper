@@ -7,7 +7,8 @@ import { Soal, SesiUjian } from '@/lib/types'
 import {
   formatDurasi, hitungSisaDetik,
   simpanSesiLokal, ambilSesiLokal, simpanJawabanLokal,
-  tandaiSudahSync, hitungJawabanBelumSync, acakArray, ambilHurufOpsi
+  tandaiSudahSync, hitungJawabanBelumSync, acakArray, ambilHurufOpsi,
+  withRetry
 } from '@/lib/utils'
 
 type StatusPeringatan = 'idle' | 'peringatan1' | 'peringatan2' | 'peringatan3' | 'auto_submit'
@@ -117,18 +118,12 @@ export default function UjianPage() {
       if (errSesi || !sesiDB) { router.replace('/'); return }
       if (['selesai', 'auto_submit', 'paksa_submit'].includes(sesiDB.status)) { router.replace('/selesai'); return }
 
-      const { data: soalDBRaw, error: errSoal } = await sb
-        .from('soal').select('id, ujian_id, nomor_urut, pertanyaan, tipe, opsi_jawaban, bobot_nilai')
-        .eq('ujian_id', ujian.id).order('nomor_urut')
-
-      if (errSoal || !soalDBRaw) throw new Error('Gagal memuat soal')
-
-      const soalDB = soalDBRaw.map((s: any) => ({
-        ...s,
-        opsi_jawaban: Array.isArray(s.opsi_jawaban)
-          ? s.opsi_jawaban
-          : (typeof s.opsi_jawaban === 'string' ? (() => { try { return JSON.parse(s.opsi_jawaban) } catch { return null } })() : s.opsi_jawaban),
-      }))
+      // SCALABILITY: Fetch questions from server-side cache instead of
+      // hitting Supabase directly. 300 students = 1 DB query instead of 300.
+      const soalRes = await fetch(`/api/soal-cache?ujian_id=${ujian.id}`)
+      const soalJson = await soalRes.json()
+      if (!soalRes.ok || !soalJson.data) throw new Error('Gagal memuat soal')
+      const soalDB: Soal[] = soalJson.data
 
       let soalFinal = soalDB as Soal[]
       if (ujian.acak_soal) {
@@ -238,7 +233,11 @@ export default function UjianPage() {
 
   useEffect(() => {
     if (loading || !sesi) return
-    syncTimerRef.current = setInterval(() => { syncJawaban() }, 15000)
+    // SCALABILITY: Sync every 30-40s with random jitter instead of
+    // exactly 15s. This spreads 300 students' syncs across a 10-second
+    // window, preventing micro-spikes on the Supabase pooler.
+    const jitteredInterval = 30000 + Math.floor(Math.random() * 10000)
+    syncTimerRef.current = setInterval(() => { syncJawaban() }, jitteredInterval)
     return () => clearInterval(syncTimerRef.current!)
   }, [loading, sesi, jawabanState])
 
@@ -252,8 +251,13 @@ export default function UjianPage() {
       const belumSync = hitungJawabanBelumSync(sesiLokal)
       if (belumSync.length === 0) return
       const upsertData = belumSync.map((soal_id) => ({ sesi_id: sesi.id, soal_id, jawaban_mahasiswa: sesiLokal.jawaban[soal_id]?.jawaban || null }))
-      const { error } = await sb.from('jawaban').upsert(upsertData, { onConflict: 'sesi_id,soal_id' })
-      if (!error) tandaiSudahSync(sesiLokal, belumSync)
+      // SCALABILITY: Auto-retry with exponential backoff if pooler is
+      // temporarily full. Answers remain safe in localStorage while retrying.
+      await withRetry(async () => {
+        const { error } = await sb.from('jawaban').upsert(upsertData, { onConflict: 'sesi_id,soal_id' })
+        if (error) throw error
+      })
+      tandaiSudahSync(sesiLokal, belumSync)
     } catch (e) { console.error('Sync gagal:', e) } finally { isSyncingRef.current = false }
   }, [sesi])
 
