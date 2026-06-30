@@ -10,6 +10,7 @@ export default function DashboardTabs() {
     { name: 'Ringkasan', href: '/admin/dashboard' },
     { name: 'Live Monitor', href: '/admin/monitor' },
     { name: 'Manajemen Ujian', href: '/admin/ujian' },
+    { name: 'Manajemen Admin', href: '/admin/admins' },
   ]
 
   return (

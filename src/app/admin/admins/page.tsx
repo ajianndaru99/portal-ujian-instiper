@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import DashboardTabs from '../components/DashboardTabs'
 
 type Admin = {
   id: string
@@ -65,6 +66,7 @@ export default function AdminsPage() {
 
   return (
     <div className="space-y-5">
+      <DashboardTabs />
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>

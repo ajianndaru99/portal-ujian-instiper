@@ -12,6 +12,7 @@ export default function AdminDosenPage() {
   const [list, setList] = useState<Dosen[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [sortOrder, setSortOrder] = useState('nama_az')
   const [showForm, setShowForm] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -60,7 +61,18 @@ export default function AdminDosenPage() {
     loadData()
   }
 
-  const filtered = list.filter(d => d.nama.toLowerCase().includes(search.toLowerCase()) || d.kode_dosen.toLowerCase().includes(search.toLowerCase()))
+  const filtered = list.filter(d => 
+    d.nama.toLowerCase().includes(search.toLowerCase()) || 
+    d.kode_dosen.toLowerCase().includes(search.toLowerCase())
+  ).sort((a, b) => {
+    switch (sortOrder) {
+      case 'kode_az': return a.kode_dosen.localeCompare(b.kode_dosen)
+      case 'kode_za': return b.kode_dosen.localeCompare(a.kode_dosen)
+      case 'nama_az': return a.nama.localeCompare(b.nama)
+      case 'nama_za': return b.nama.localeCompare(a.nama)
+      default: return 0
+    }
+  })
 
   return (
     <div className="space-y-5">
@@ -75,7 +87,15 @@ export default function AdminDosenPage() {
         </div>
       </div>
 
-      <input className="input-field text-sm" placeholder="Cari nama atau kode dosen..." value={search} onChange={e => setSearch(e.target.value)} />
+      <div className="flex flex-wrap gap-3">
+        <input className="input-field text-sm flex-1" placeholder="Cari nama atau kode dosen..." value={search} onChange={e => setSearch(e.target.value)} />
+        <select className="input-field text-sm w-40" value={sortOrder} onChange={e => setSortOrder(e.target.value)}>
+          <option value="nama_az">Nama (A-Z)</option>
+          <option value="nama_za">Nama (Z-A)</option>
+          <option value="kode_az">Kode (A-Z)</option>
+          <option value="kode_za">Kode (Z-A)</option>
+        </select>
+      </div>
 
       {loading ? (
         <div className="text-center py-12 text-gray-400">Memuat data...</div>

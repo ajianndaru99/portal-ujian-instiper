@@ -37,6 +37,7 @@ export default function AdminUjianPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('semua')
+  const [sortOrder, setSortOrder] = useState('terbaru')
 
   // Modal aktifkan kembali
   const [showReaktivasi, setShowReaktivasi] = useState(false)
@@ -146,6 +147,14 @@ export default function AdminUjianPage() {
       u.kode_ujian?.toLowerCase().includes(search.toLowerCase())
     const matchStatus = filterStatus === 'semua' || u.status === filterStatus
     return matchSearch && matchStatus
+  }).sort((a, b) => {
+    switch (sortOrder) {
+      case 'terbaru': return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      case 'terlama': return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      case 'judul_az': return a.judul.localeCompare(b.judul)
+      case 'judul_za': return b.judul.localeCompare(a.judul)
+      default: return 0
+    }
   })
 
   return (
@@ -181,6 +190,16 @@ export default function AdminUjianPage() {
           <option value="aktif">Aktif</option>
           <option value="selesai">Selesai</option>
           <option value="dibatalkan">Dibatalkan</option>
+        </select>
+        <select
+          className="input-field text-sm sm:w-40"
+          value={sortOrder}
+          onChange={e => setSortOrder(e.target.value)}
+        >
+          <option value="terbaru">Terbaru</option>
+          <option value="terlama">Terlama</option>
+          <option value="judul_az">Judul (A-Z)</option>
+          <option value="judul_za">Judul (Z-A)</option>
         </select>
       </div>
 

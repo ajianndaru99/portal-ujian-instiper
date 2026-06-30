@@ -31,6 +31,7 @@ export default function AdminMahasiswaPage() {
   const [filterProdi, setFilterProdi] = useState('semua')
   const [filterMinat, setFilterMinat] = useState('semua')
   const [filterAngkatan, setFilterAngkatan] = useState('semua')
+  const [sortOrder, setSortOrder] = useState('nim_asc')
 
   const [showForm, setShowForm] = useState(false)
   const [showImport, setShowImport] = useState(false)
@@ -103,6 +104,14 @@ export default function AdminMahasiswaPage() {
       (filterMinat === 'semua' || m.minat === filterMinat) &&
       (filterAngkatan === 'semua' || m.angkatan === parseInt(filterAngkatan))
     )
+  }).sort((a, b) => {
+    switch (sortOrder) {
+      case 'nim_asc': return a.nim.localeCompare(b.nim)
+      case 'nim_desc': return b.nim.localeCompare(a.nim)
+      case 'nama_az': return a.nama.localeCompare(b.nama)
+      case 'nama_za': return b.nama.localeCompare(a.nama)
+      default: return 0
+    }
   })
 
   return (
@@ -135,6 +144,12 @@ export default function AdminMahasiswaPage() {
         <select className="input-field text-sm w-32" value={filterAngkatan} onChange={e => setFilterAngkatan(e.target.value)}>
           <option value="semua">Semua Angkatan</option>
           {angkatanList.map(a => <option key={a} value={a}>{a}</option>)}
+        </select>
+        <select className="input-field text-sm w-40" value={sortOrder} onChange={e => setSortOrder(e.target.value)}>
+          <option value="nim_asc">NIM Terkecil</option>
+          <option value="nim_desc">NIM Terbesar</option>
+          <option value="nama_az">Nama (A-Z)</option>
+          <option value="nama_za">Nama (Z-A)</option>
         </select>
       </div>
 

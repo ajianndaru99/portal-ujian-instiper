@@ -36,6 +36,7 @@ export default function AdminMatkulPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [filterProdi, setFilterProdi] = useState('semua')
+  const [sortOrder, setSortOrder] = useState('kode_az')
 
   const [showForm, setShowForm] = useState(false)
   const [showImport, setShowImport] = useState(false)
@@ -138,6 +139,14 @@ export default function AdminMatkulPage() {
     const matchSearch = m.nama_matkul.toLowerCase().includes(s) || m.kode_matkul.toLowerCase().includes(s)
     const matchProdi = filterProdi === 'semua' || m.prodi === filterProdi
     return matchSearch && matchProdi
+  }).sort((a, b) => {
+    switch (sortOrder) {
+      case 'kode_az': return a.kode_matkul.localeCompare(b.kode_matkul)
+      case 'kode_za': return b.kode_matkul.localeCompare(a.kode_matkul)
+      case 'nama_az': return a.nama_matkul.localeCompare(b.nama_matkul)
+      case 'nama_za': return b.nama_matkul.localeCompare(a.nama_matkul)
+      default: return 0
+    }
   })
 
   const agrotekList = filtered.filter(m => m.prodi === 'agroteknologi')
@@ -177,6 +186,16 @@ export default function AdminMatkulPage() {
           <option value="semua">Semua Prodi</option>
           <option value="agroteknologi">Agroteknologi</option>
           <option value="agribisnis">Agribisnis</option>
+        </select>
+        <select
+          className="input-field text-sm w-40"
+          value={sortOrder}
+          onChange={e => setSortOrder(e.target.value)}
+        >
+          <option value="kode_az">Kode (A-Z)</option>
+          <option value="kode_za">Kode (Z-A)</option>
+          <option value="nama_az">Nama (A-Z)</option>
+          <option value="nama_za">Nama (Z-A)</option>
         </select>
       </div>
 

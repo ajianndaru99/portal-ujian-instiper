@@ -79,6 +79,7 @@ export default function AdminRekapPage() {
   const [resetting, setResetting] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('semua')
+  const [sortOrder, setSortOrder] = useState('terbaru')
 
   useEffect(() => { loadUjianList() }, [])
 
@@ -337,6 +338,18 @@ export default function AdminRekapPage() {
     const s = search.toLowerCase()
     return (r.nim.includes(s) || r.nama_mahasiswa.toLowerCase().includes(s)) &&
       (filterStatus === 'semua' || r.status === filterStatus)
+  }).sort((a, b) => {
+    switch (sortOrder) {
+      case 'terbaru': return new Date(b.waktu_mulai || 0).getTime() - new Date(a.waktu_mulai || 0).getTime()
+      case 'terlama': return new Date(a.waktu_mulai || 0).getTime() - new Date(b.waktu_mulai || 0).getTime()
+      case 'prodi_az': return a.prodi.localeCompare(b.prodi)
+      case 'prodi_za': return b.prodi.localeCompare(a.prodi)
+      case 'minat_az': return (a.minat || '').localeCompare(b.minat || '')
+      case 'minat_za': return (b.minat || '').localeCompare(a.minat || '')
+      case 'kelas_az': return (a.kelas || '').localeCompare(b.kelas || '')
+      case 'kelas_za': return (b.kelas || '').localeCompare(a.kelas || '')
+      default: return 0
+    }
   })
 
   const selesaiCount = rekap.filter(r => ['selesai','auto_submit','paksa_submit'].includes(r.status)).length
@@ -407,6 +420,17 @@ export default function AdminRekapPage() {
             <option value="mengerjakan">Mengerjakan</option>
             <option value="selesai">Selesai</option>
             <option value="auto_submit">Auto Submit</option>
+          </select>
+          <select className="admin-input" style={{ width: 160 }}
+            value={sortOrder} onChange={e => setSortOrder(e.target.value)}>
+            <option value="terbaru">Mulai Terbaru</option>
+            <option value="terlama">Mulai Terlama</option>
+            <option value="prodi_az">Prodi (A-Z)</option>
+            <option value="prodi_za">Prodi (Z-A)</option>
+            <option value="minat_az">Minat (A-Z)</option>
+            <option value="minat_za">Minat (Z-A)</option>
+            <option value="kelas_az">Kelas (A-Z)</option>
+            <option value="kelas_za">Kelas (Z-A)</option>
           </select>
         </div>
       )}
