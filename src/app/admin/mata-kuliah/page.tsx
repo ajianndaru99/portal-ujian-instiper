@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import ImportMatkulModal from './ImportMatkulModal'
 
 interface MataKuliah {
   id: string
@@ -37,6 +38,7 @@ export default function AdminMatkulPage() {
   const [filterProdi, setFilterProdi] = useState('semua')
 
   const [showForm, setShowForm] = useState(false)
+  const [showImport, setShowImport] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState({ ...EMPTY_FORM })
   const [saving, setSaving] = useState(false)
@@ -144,14 +146,19 @@ export default function AdminMatkulPage() {
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-gray-800">Manajemen Mata Kuliah</h1>
           <p className="text-sm text-gray-400">{list.length} mata kuliah terdaftar</p>
         </div>
-        <button onClick={bukaFormBaru} className="btn-primary text-sm px-4 py-2.5">
-          + Tambah Mata Kuliah
-        </button>
+        <div className="flex gap-2 w-full sm:w-auto">
+          <button onClick={() => setShowImport(true)} className="btn-secondary text-sm px-4 py-2.5 flex-1 sm:flex-none">
+            📥 Import
+          </button>
+          <button onClick={bukaFormBaru} className="btn-primary text-sm px-4 py-2.5 flex-1 sm:flex-none">
+            + Tambah Mata Kuliah
+          </button>
+        </div>
       </div>
 
       {/* Filter */}
@@ -299,7 +306,6 @@ export default function AdminMatkulPage() {
         </div>
       )}
 
-      {/* Modal form */}
       {showForm && (
         <div className="overlay animate-fade-in">
           <div className="bg-white rounded-2xl w-full max-w-md p-5 space-y-4">
@@ -396,6 +402,13 @@ export default function AdminMatkulPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {showImport && (
+        <ImportMatkulModal
+          onClose={() => setShowImport(false)}
+          onSuccess={() => { setShowImport(false); loadData() }}
+        />
       )}
     </div>
   )
