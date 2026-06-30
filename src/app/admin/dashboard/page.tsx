@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import DashboardTabs from '../components/DashboardTabs'
 
 interface MonitorRow {
   ujian_id: string
@@ -60,6 +61,8 @@ export default function AdminDashboardPage() {
 
   return (
     <div style={{ maxWidth: 900 }}>
+      <DashboardTabs />
+      
       {/* Page header */}
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--admin-text)', letterSpacing: '-0.03em' }}>

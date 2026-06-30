@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import DashboardTabs from '../components/DashboardTabs'
 
 type UjianMonitor = {
   id: string
@@ -75,6 +76,7 @@ export default function MonitorPage() {
 
   return (
     <div className="space-y-6">
+      <DashboardTabs />
       {/* Judul + tombol refresh */}
       <div className="flex items-start justify-between">
         <div>
