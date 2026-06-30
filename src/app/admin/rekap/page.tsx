@@ -67,6 +67,7 @@ function nilaiKeHuruf(nilai: number | null): string {
 
 export default function AdminRekapPage() {
   const [ujianList, setUjianList] = useState<UjianOption[]>([])
+  const [selectedUjian, setSelectedUjian] = useState('')
   const [rekap, setRekap] = useState<RekapRow[]>([])
   const [soalList, setSoalList] = useState<SoalRingkas[]>([])
   const [jawabanMap, setJawabanMap] = useState<Record<string, Record<string, JawabanDetail>>>({})
@@ -80,24 +81,24 @@ export default function AdminRekapPage() {
   const [filterStatus, setFilterStatus] = useState('semua')
   const [sortOrder, setSortOrder] = useState('terbaru')
 
-  useEffect(() => { 
-    loadUjianList()
-    loadRekap() 
-  }, [])
+  useEffect(() => { loadUjianList() }, [])
 
   async function loadUjianList() {
     const { data } = await supabase.from('ujian').select('id, judul, kode_ujian, status').order('created_at', { ascending: false })
     setUjianList(data || [])
   }
 
-  async function loadRekap() {
+  async function loadRekap(ujianId: string) {
+    if (!ujianId) return
     setLoading(true); setRekap([]); setSoalList([]); setJawabanMap({})
+    setSearch(''); setFilterStatus('semua'); setSortOrder('terbaru')
     try {
       const { data: sesiList } = await supabase
         .from('sesi_ujian')
-        .select(`id, nim, status, waktu_mulai, waktu_selesai, jumlah_pelanggaran, nilai_pg, nilai_esai, nilai_final, ujian_id,
+        .select(`id, nim, status, waktu_mulai, waktu_selesai, jumlah_pelanggaran, nilai_pg, nilai_esai, nilai_final,
           mahasiswa(nim, nama, prodi, minat, angkatan, kelas),
           ujian(judul, mata_kuliah(nama_matkul, dosen(nama)))`)
+        .eq('ujian_id', ujianId)
         .order('nim')
         .limit(5000)
 
@@ -105,7 +106,6 @@ export default function AdminRekapPage() {
 
       const rows: RekapRow[] = sesiList.map((s: any) => ({
         sesi_id: s.id,
-        ujian_id: s.ujian_id,
         nama_ujian: s.ujian?.judul || '',
         nama_matkul: s.ujian?.mata_kuliah?.nama_matkul || '',
         nama_dosen: s.ujian?.mata_kuliah?.dosen?.nama || '',
@@ -125,25 +125,20 @@ export default function AdminRekapPage() {
       }))
       setRekap(rows)
 
-      // Ambil daftar semua soal esai dari semua ujian yang ada di sesi
-      const ujianIds = Array.from(new Set(rows.map(r => (r as any).ujian_id)))
-      if (ujianIds.length > 0) {
-        const { data: soalData } = await supabase
-          .from('soal')
-          .select('id, ujian_id, nomor_urut, tipe, pertanyaan, bobot_nilai')
-          .in('ujian_id', ujianIds)
-          .eq('tipe', 'esai')
-          .order('nomor_urut')
-        setSoalList(soalData || [])
-      }
+      const { data: soalData } = await supabase
+        .from('soal')
+        .select('id, nomor_urut, tipe, pertanyaan, bobot_nilai')
+        .eq('ujian_id', ujianId)
+        .order('nomor_urut')
+      setSoalList(soalData || [])
 
       const sesiIds = rows.map(r => r.sesi_id)
-      if (sesiIds.length > 0) {
+      if (sesiIds.length > 0 && soalData && soalData.length > 0) {
         const { data: jawabanData } = await supabase
         .from('jawaban')
         .select('id, sesi_id, soal_id, jawaban_mahasiswa, nilai_esai, catatan_esai')
         .in('sesi_id', sesiIds)
-        .limit(10000)  
+        .limit(10000)
 
         const map: Record<string, Record<string, JawabanDetail>> = {}
         const initEdit: Record<string, { nilai: string; catatan: string }> = {}
@@ -174,7 +169,7 @@ export default function AdminRekapPage() {
       await supabase.from('jawaban').delete().eq('sesi_id', sesiId)
       await supabase.from('log_aktivitas').delete().eq('sesi_id', sesiId)
       await supabase.from('sesi_ujian').delete().eq('id', sesiId)
-      await loadRekap()
+      await loadRekap(selectedUjian)
     } catch (err) { console.error(err); alert('Gagal reset sesi.') }
     finally { setResetting(null) }
   }
@@ -235,32 +230,42 @@ export default function AdminRekapPage() {
     if (rekap.length === 0) return
     setExporting(true)
     try {
-      const namaFile = `Rekap_Semua_Data_${new Date().toISOString().slice(0, 10)}`
+      const ujian = ujianList.find(u => u.id === selectedUjian)
+      const namaFile = `Rekap_${ujian?.kode_ujian || 'Ujian'}_${new Date().toISOString().slice(0, 10)}`
+
+      const soalPG = soalList.filter(s => s.tipe === 'pg')
+      const soalEsai = soalList.filter(s => s.tipe === 'esai')
 
       // --- PERSIAPAN SHEET 1: JAWABAN LENGKAP ---
       const dataJawaban = filtered.map((r, i) => {
         const row: Record<string, any> = { 
           'No': i + 1, 
-          'NIM': Number(r.nim),
           'Nama Mahasiswa': r.nama_mahasiswa, 
-          'Ujian': r.nama_ujian,
-          'Mata Kuliah': r.nama_matkul,
-          'Dosen': r.nama_dosen,
+          'NIM': Number(r.nim),
           'Minat': r.minat || '-',
           'Kelas': r.kelas || '-',
-          'Nilai PG': r.nilai_pg !== null ? Number(r.nilai_pg.toFixed(2)) : '-',
-          'Nilai Esai': r.nilai_esai !== null ? Number(r.nilai_esai.toFixed(2)) : '-',
-          'Nilai Final': r.nilai_final !== null ? Number(r.nilai_final.toFixed(2)) : '-',
-          'Huruf Mutu': nilaiKeHuruf(r.nilai_final)
+          'Nilai PG': r.nilai_pg !== null ? Number(r.nilai_pg.toFixed(2)) : '-'
         }
+        
+        soalPG.forEach(s => { row[`PG ${s.nomor_urut}`] = jawabanMap[r.sesi_id]?.[s.id]?.jawaban_mahasiswa || '-' })
+        soalEsai.forEach(s => { row[`Esai ${s.nomor_urut}`] = jawabanMap[r.sesi_id]?.[s.id]?.jawaban_mahasiswa || '(tidak dijawab)' })
+        
+        row['Nilai Esai'] = r.nilai_esai !== null ? Number(r.nilai_esai.toFixed(2)) : '-'
+        row['Nilai Final'] = r.nilai_final !== null ? Number(r.nilai_final.toFixed(2)) : '-'
+        row['Huruf Mutu'] = nilaiKeHuruf(r.nilai_final)
+        row['Jumlah Benar'] = r.nilai_pg !== null ? Math.round((r.nilai_pg / 100) * soalPG.length) : 0
+        
         return row
       })
 
-      const headerSheet1 = ['No', 'NIM', 'Nama Mahasiswa', 'Ujian', 'Mata Kuliah', 'Dosen', 'Minat', 'Kelas', 'Nilai PG', 'Nilai Esai', 'Nilai Final', 'Huruf Mutu']
+      const headerSheet1 = ['No', 'Nama Mahasiswa', 'NIM', 'Minat', 'Kelas', 'Nilai PG']
+      soalPG.forEach(s => headerSheet1.push(`PG ${s.nomor_urut}`))
+      soalEsai.forEach(s => headerSheet1.push(`Esai ${s.nomor_urut}`))
+      headerSheet1.push('Nilai Esai', 'Nilai Final', 'Huruf Mutu', 'Jumlah Benar')
 
       // --- PERSIAPAN SHEET 2: DETAIL & KECURANGAN ---
       const dataDetail = filtered.map((r, i) => ({
-        'No': i + 1, 'NIM': Number(r.nim), 'Nama Mahasiswa': r.nama_mahasiswa, 'Ujian': r.nama_ujian,
+        'No': i + 1, 'NIM': Number(r.nim), 'Nama Mahasiswa': r.nama_mahasiswa,
         'Prodi': r.prodi, 'Minat': r.minat, 'Kelas': r.kelas, 'Angkatan': r.angkatan,
         'Status': r.status, 'Waktu Mulai': formatWaktu(r.waktu_mulai), 'Waktu Selesai': formatWaktu(r.waktu_selesai),
         'Pelanggaran': r.jumlah_pelanggaran,
@@ -274,6 +279,9 @@ export default function AdminRekapPage() {
       const lulus = nilaiValid.filter(n => n >= 55).length
 
       const dataStatistik = [
+        { 'Keterangan': 'Nama Ujian', 'Nilai': ujian?.judul || '' },
+        { 'Keterangan': 'Mata Kuliah', 'Nilai': rekap[0]?.nama_matkul || '' },
+        { 'Keterangan': 'Dosen', 'Nilai': rekap[0]?.nama_dosen || '' },
         { 'Keterangan': 'Tanggal Export', 'Nilai': new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) },
         { 'Keterangan': '', 'Nilai': '' },
         { 'Keterangan': 'Total Peserta', 'Nilai': rekap.length },
@@ -290,17 +298,18 @@ export default function AdminRekapPage() {
       // --- PROSES PEMBUATAN FILE EXCEL ---
       const wb = XLSX.utils.book_new()
 
-      // Buat Sheet 1
       const wsJawaban = XLSX.utils.json_to_sheet(dataJawaban, { header: headerSheet1 })
-      wsJawaban['!cols'] = [{ wch: 4 }, { wch: 12 }, { wch: 28 }, { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 8 }, { wch: 6 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }]
-      XLSX.utils.book_append_sheet(wb, wsJawaban, 'Rekap Nilai')
+      const colWidthsJawaban = [{ wch: 4 }, { wch: 28 }, { wch: 12 }, { wch: 14 }, { wch: 8 }, { wch: 10 }]
+      soalPG.forEach(() => colWidthsJawaban.push({ wch: 8 }))
+      soalEsai.forEach(() => colWidthsJawaban.push({ wch: 40 }))
+      colWidthsJawaban.push({ wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 14 })
+      wsJawaban['!cols'] = colWidthsJawaban
+      XLSX.utils.book_append_sheet(wb, wsJawaban, 'Jawaban Lengkap')
 
-      // Buat Sheet 2
       const wsDetail = XLSX.utils.json_to_sheet(dataDetail)
-      wsDetail['!cols'] = [{ wch: 4 },{ wch: 12 },{ wch: 25 },{ wch: 20 },{ wch: 14 },{ wch: 8 },{ wch: 7 },{ wch: 9 },{ wch: 16 },{ wch: 16 },{ wch: 16 },{ wch: 12 },{ wch: 28 }]
+      wsDetail['!cols'] = [{ wch: 4 },{ wch: 12 },{ wch: 25 },{ wch: 14 },{ wch: 8 },{ wch: 7 },{ wch: 9 },{ wch: 16 },{ wch: 16 },{ wch: 16 },{ wch: 12 },{ wch: 28 }]
       XLSX.utils.book_append_sheet(wb, wsDetail, 'Detail & Kecurangan')
 
-      // Buat Sheet 3
       const wsStatistik = XLSX.utils.json_to_sheet(dataStatistik)
       wsStatistik['!cols'] = [{ wch: 28 },{ wch: 35 }]
       XLSX.utils.book_append_sheet(wb, wsStatistik, 'Statistik')
@@ -354,6 +363,21 @@ export default function AdminRekapPage() {
             ) : (<><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg> Export Excel</>)}
           </button>
         )}
+      </div>
+
+      {/* Pilih ujian */}
+      <div className="admin-card" style={{ marginBottom: 16 }}>
+        <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--admin-text-muted)', display: 'block', marginBottom: 8 }}>
+          Pilih Ujian
+        </label>
+        <select className="admin-input"
+          value={selectedUjian}
+          onChange={e => { setSelectedUjian(e.target.value); loadRekap(e.target.value) }}>
+          <option value="">-- Pilih ujian untuk melihat rekap --</option>
+          {ujianList.map(u => (
+            <option key={u.id} value={u.id}>[{u.status.toUpperCase()}] {u.judul} — {u.kode_ujian}</option>
+          ))}
+        </select>
       </div>
 
       {/* Stat cards */}
@@ -412,16 +436,16 @@ export default function AdminRekapPage() {
             <table className="admin-table">
               <thead>
                 <tr>
-                  {['No','NIM','Nama','Ujian','Minat','Kls','Angk.','Status','Pelang.','Nilai PG','Nilai Esai','Final','Huruf','Aksi'].map(h => (
+                  {['No','NIM','Nama','Minat','Kls','Angk.','Status','Pelang.','Nilai PG','Nilai Esai','Final','Huruf','Aksi'].map(h => (
                     <th key={h}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={14} style={{ textAlign: 'center', padding: 32, color: 'var(--admin-text-subtle)' }}>Tidak ada data.</td></tr>
+                  <tr><td colSpan={13} style={{ textAlign: 'center', padding: 32, color: 'var(--admin-text-subtle)' }}>Tidak ada data.</td></tr>
                 ) : filtered.map((r, i) => {
-                  const soalEsaiUjian = soalList.filter(s => s.tipe === 'esai' && (s as any).ujian_id === (r as any).ujian_id)
+                  const soalEsaiUjian = soalList.filter(s => s.tipe === 'esai')
                   const adaEsai = soalEsaiUjian.length > 0
                   const sudahDinilaiSemua = adaEsai && soalEsaiUjian.every(s => jawabanMap[r.sesi_id]?.[s.id]?.nilai_esai !== null && jawabanMap[r.sesi_id]?.[s.id]?.nilai_esai !== undefined)
                   return (
@@ -430,9 +454,6 @@ export default function AdminRekapPage() {
                     <td style={{ color: 'var(--admin-text-subtle)', width: 36 }}>{i + 1}</td>
                     <td><span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.75rem', fontWeight: 600, color: 'var(--admin-text)' }}>{r.nim}</span></td>
                     <td style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>{r.nama_mahasiswa}</td>
-                    <td style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.nama_ujian}>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--admin-text-muted)' }}>{r.nama_ujian}</span>
-                    </td>
                     <td><span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase' }}>{r.minat}</span></td>
                     <td style={{ textAlign: 'center', fontWeight: 700 }}>{r.kelas}</td>
                     <td style={{ color: 'var(--admin-text-muted)' }}>{r.angkatan}</td>
