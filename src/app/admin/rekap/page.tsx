@@ -67,7 +67,6 @@ function nilaiKeHuruf(nilai: number | null): string {
 
 export default function AdminRekapPage() {
   const [ujianList, setUjianList] = useState<UjianOption[]>([])
-  const [selectedUjian, setSelectedUjian] = useState('')
   const [rekap, setRekap] = useState<RekapRow[]>([])
   const [soalList, setSoalList] = useState<SoalRingkas[]>([])
   const [jawabanMap, setJawabanMap] = useState<Record<string, Record<string, JawabanDetail>>>({})
@@ -175,7 +174,7 @@ export default function AdminRekapPage() {
       await supabase.from('jawaban').delete().eq('sesi_id', sesiId)
       await supabase.from('log_aktivitas').delete().eq('sesi_id', sesiId)
       await supabase.from('sesi_ujian').delete().eq('id', sesiId)
-      await loadRekap(selectedUjian)
+      await loadRekap()
     } catch (err) { console.error(err); alert('Gagal reset sesi.') }
     finally { setResetting(null) }
   }
@@ -555,11 +554,11 @@ export default function AdminRekapPage() {
             </p>
           </div>
         </div>
-      ) : selectedUjian ? (
+      ) : (
         <div className="admin-card" style={{ textAlign: 'center', padding: '40px' }}>
           <p style={{ color: 'var(--admin-text-subtle)', fontSize: '0.875rem' }}>Belum ada peserta yang terdaftar.</p>
         </div>
-      ) : null}
+      )}
     </div>
   )
 }
