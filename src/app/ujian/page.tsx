@@ -345,28 +345,43 @@ export default function UjianPage() {
       }
     }
 
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null
-    let pendingTipe: 'pindah_tab' | 'blur_app' | null = null
+    const GRACE_PERIOD_MS = 5000 // 5 detik untuk memberi waktu jika siswa membuka Control Center/Notifikasi
 
-    function handlePelanggaran(tipe: 'pindah_tab' | 'blur_app') {
-      if (debounceTimer) return
-      pendingTipe = tipe
-      debounceTimer = setTimeout(() => {
-        if (pendingTipe) kirimPelanggaran(pendingTipe)
-        debounceTimer = null
-        pendingTipe = null
-      }, DEBOUNCE_MS)
+    let violationTimer: ReturnType<typeof setTimeout> | null = null
+
+    function mulaiPelanggaran(tipe: 'pindah_tab' | 'blur_app') {
+      if (violationTimer) return
+      violationTimer = setTimeout(() => {
+        kirimPelanggaran(tipe)
+        violationTimer = null
+      }, GRACE_PERIOD_MS)
     }
 
-    const onVisibility = () => { if (document.visibilityState === 'hidden') handlePelanggaran('pindah_tab') }
-    const onBlur = () => { if (document.visibilityState === 'visible') handlePelanggaran('blur_app') }
+    function batalPelanggaran() {
+      if (violationTimer) {
+        clearTimeout(violationTimer)
+        violationTimer = null
+      }
+    }
+
+    const onVisibility = () => { 
+      if (document.visibilityState === 'hidden') mulaiPelanggaran('pindah_tab')
+      else batalPelanggaran()
+    }
+    const onBlur = () => { 
+      if (document.visibilityState === 'visible') mulaiPelanggaran('blur_app') 
+    }
+    const onFocus = () => { batalPelanggaran() }
+
     document.addEventListener('visibilitychange', onVisibility)
     window.addEventListener('blur', onBlur)
+    window.addEventListener('focus', onFocus)
 
     return () => {
       document.removeEventListener('visibilitychange', onVisibility)
       window.removeEventListener('blur', onBlur)
-      if (debounceTimer) clearTimeout(debounceTimer)
+      window.removeEventListener('focus', onFocus)
+      if (violationTimer) clearTimeout(violationTimer)
     }
   }, [loading, sesi, syncJawaban, router])
 
