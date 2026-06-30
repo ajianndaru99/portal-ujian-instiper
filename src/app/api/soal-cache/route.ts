@@ -2,6 +2,8 @@ import { Redis } from '@upstash/redis'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
+import { Ratelimit } from '@upstash/ratelimit'
+
 // ============================================================
 // Server-side Question Cache (Upstash Redis)
 // ============================================================
@@ -11,9 +13,23 @@ const redis = new Redis({
   token: process.env.UPSTASH_REDIS_REST_TOKEN!,
 })
 
+// Rate limit: 30 requests per minute per IP
+const ratelimit = new Ratelimit({
+  redis: redis,
+  limiter: Ratelimit.slidingWindow(30, '1 m'),
+})
+
 const CACHE_TTL_SECONDS = 300 // 5 minutes
 
 export async function GET(request: NextRequest) {
+  // Rate limiting check
+  const ip = request.headers.get('x-forwarded-for') ?? '127.0.0.1'
+  const { success } = await ratelimit.limit(ip)
+  
+  if (!success) {
+    return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
+  }
+
   const ujianId = request.nextUrl.searchParams.get('ujian_id')
   if (!ujianId) return NextResponse.json({ error: 'ujian_id required' }, { status: 400 })
 

@@ -15,6 +15,9 @@ export const viewport: Viewport = {
   themeColor: '#16a34a', // primary-600
 }
 
+import { Analytics } from '@vercel/analytics/react'
+import { SpeedInsights } from '@vercel/speed-insights/next'
+
 export default function RootLayout({
   children,
 }: {
@@ -22,7 +25,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="id">
-      <body>{children}</body>
+      <body>
+        {children}
+        <Analytics />
+        <SpeedInsights />
+      </body>
     </html>
   )
 }
