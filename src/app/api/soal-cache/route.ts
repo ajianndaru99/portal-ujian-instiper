@@ -22,11 +22,18 @@ const ratelimit = new Ratelimit({
 const CACHE_TTL_SECONDS = 300 // 5 minutes
 
 export async function GET(request: NextRequest) {
-  // Rate limiting check
+  // Rate limiting check — wrapped in try-catch agar tidak crash jika Upstash down/quota habis
   const ip = request.headers.get('x-forwarded-for') ?? '127.0.0.1'
-  const { success } = await ratelimit.limit(ip)
-  
-  if (!success) {
+  let rateLimitOk = true
+  try {
+    const { success } = await ratelimit.limit(ip)
+    rateLimitOk = success
+  } catch (err) {
+    // Upstash error (quota habis, timeout, dll) — tetap lanjutkan, jangan crash
+    console.warn('Ratelimit check failed, bypassing:', err)
+  }
+
+  if (!rateLimitOk) {
     return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
   }
 
