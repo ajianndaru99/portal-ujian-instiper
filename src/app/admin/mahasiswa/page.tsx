@@ -30,6 +30,7 @@ export default function AdminMahasiswaPage() {
   const [search, setSearch] = useState('')
   const [filterProdi, setFilterProdi] = useState('semua')
   const [filterMinat, setFilterMinat] = useState('semua')
+  const [filterKelas, setFilterKelas] = useState('semua')
   const [filterAngkatan, setFilterAngkatan] = useState('semua')
   const [sortOrder, setSortOrder] = useState('nim_asc')
 
@@ -96,12 +97,14 @@ export default function AdminMahasiswaPage() {
   }
 
   const angkatanList = Array.from(new Set(list.map(m => m.angkatan))).sort()
+  const kelasList = Array.from(new Set(list.map(m => m.kelas))).sort()
   const filtered = list.filter(m => {
     const s = search.toLowerCase()
     return (
       (m.nim.toLowerCase().includes(s) || m.nama.toLowerCase().includes(s)) &&
       (filterProdi === 'semua' || m.prodi === filterProdi) &&
       (filterMinat === 'semua' || m.minat === filterMinat) &&
+      (filterKelas === 'semua' || m.kelas === filterKelas) &&
       (filterAngkatan === 'semua' || m.angkatan === parseInt(filterAngkatan))
     )
   }).sort((a, b) => {
@@ -131,18 +134,22 @@ export default function AdminMahasiswaPage() {
       <div className="flex flex-wrap gap-2">
         <input className="input-field text-sm flex-1 min-w-[160px]" placeholder="Cari NIM atau nama..." value={search} onChange={e => setSearch(e.target.value)} />
         <select className="input-field text-sm w-36" value={filterProdi} onChange={e => { setFilterProdi(e.target.value); setFilterMinat('semua') }}>
-          <option value="semua">Semua Prodi</option>
+          <option value="semua">Prodi</option>
           <option value="agroteknologi">Agroteknologi</option>
           <option value="agribisnis">Agribisnis</option>
         </select>
         <select className="input-field text-sm w-32" value={filterMinat} onChange={e => setFilterMinat(e.target.value)}>
-          <option value="semua">Semua Minat</option>
+          <option value="semua">Minat</option>
           {(filterProdi === 'semua' ? ['spks','antan','smbp','sea','spa'] : MINAT_BY_PRODI[filterProdi] || []).map(m => (
             <option key={m} value={m}>{m.toUpperCase()}</option>
           ))}
         </select>
+        <select className="input-field text-sm w-32" value={filterKelas} onChange={e => setFilterKelas(e.target.value)}>
+          <option value="semua">Kelas</option>
+          {kelasList.map(k => <option key={k} value={k}>{k}</option>)}
+        </select>
         <select className="input-field text-sm w-32" value={filterAngkatan} onChange={e => setFilterAngkatan(e.target.value)}>
-          <option value="semua">Semua Angkatan</option>
+          <option value="semua">Angkatan</option>
           {angkatanList.map(a => <option key={a} value={a}>{a}</option>)}
         </select>
         <select className="input-field text-sm w-40" value={sortOrder} onChange={e => setSortOrder(e.target.value)}>
