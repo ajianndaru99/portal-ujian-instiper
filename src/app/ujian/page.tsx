@@ -8,7 +8,7 @@ import { Soal, SesiUjian } from '@/lib/types'
 import {
   formatDurasi, hitungSisaDetik,
   simpanSesiLokal, ambilSesiLokal, simpanJawabanLokal,
-  tandaiSudahSync, hitungJawabanBelumSync, acakArray, ambilHurufOpsi,
+  tandaiSudahSync, hitungJawabanBelumSync, acakArray, ambilHurufOpsi, ambilTeksOpsi,
   withRetry
 } from '@/lib/utils'
 
@@ -599,7 +599,7 @@ export default function UjianPage() {
                     className={`w-full text-left px-4 py-3.5 rounded-xl border-2 transition-all duration-150 flex items-start gap-3 touch-manipulation ${dipilih ? 'border-primary-500 bg-primary-50' : 'border-gray-100 bg-gray-50 active:bg-gray-100'}`}>
                     <span className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 mt-0.5 ${dipilih ? 'bg-primary-500 text-white' : 'bg-white border border-gray-200 text-gray-500'}`}>{huruf}</span>
                     <span className={`text-sm leading-relaxed ${dipilih ? 'text-primary-800 font-medium' : 'text-gray-700'}`} style={{ pointerEvents: 'none' }}>
-                      {opsi.substring(2).trim()}
+                      {ambilTeksOpsi(opsi)}
                     </span>
                   </button>
                 )

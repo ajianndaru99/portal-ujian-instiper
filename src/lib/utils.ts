@@ -129,8 +129,23 @@ export function acakArray<T>(arr: T[]): T[] {
  * Mengembalikan "A", "B", "C", dst.
  */
 export function ambilHurufOpsi(opsi: string): string {
-  const match = opsi.match(/^([A-Z])\./i)
-  return match ? match[1].toUpperCase() : opsi.charAt(0).toUpperCase()
+  // Format normal: "A. Jawaban"
+  let match = opsi.match(/^([A-Z])\./i)
+  if (match) return match[1].toUpperCase()
+
+  // Format rusak dari import lama: "11. K. Jawaban" atau "7. G. Jawaban"
+  match = opsi.match(/^\d+\.\s*([A-Z])\./i)
+  if (match) return match[1].toUpperCase()
+
+  return opsi.charAt(0).toUpperCase()
+}
+
+/**
+ * Mengambil teks opsi tanpa prefix huruf/angka di depannya.
+ */
+export function ambilTeksOpsi(opsi: string): string {
+  // Hilangkan "A. " atau "11. K. "
+  return opsi.replace(/^(\d+\.\s*)?[A-Z]\.\s*/i, '').trim()
 }
 
 /**
