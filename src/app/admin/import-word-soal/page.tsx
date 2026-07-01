@@ -115,7 +115,7 @@ export default function ImportWordSoalPage() {
       const d = includedDrafts[i]
       try {
         const opsiArr = d.tipe === 'pg'
-          ? d.opsi.map((o, idx) => `${['A', 'B', 'C', 'D', 'E', 'F'][idx] || idx + 1}. ${o}`)
+          ? d.opsi.map((o, idx) => `${String.fromCharCode(65 + idx)}. ${o}`)
           : null
 
         const { error } = await supabase.from('soal').insert({
@@ -298,7 +298,7 @@ export default function ImportWordSoalPage() {
                     {d.tipe === 'pg' && d.opsi.length > 0 && (
                       <div className="space-y-1.5">
                         {d.opsi.map((opt, oi) => {
-                          const huruf = ['A', 'B', 'C', 'D', 'E', 'F'][oi] || String(oi + 1)
+                          const huruf = String.fromCharCode(65 + oi)
                           return (
                             <button
                               key={oi}

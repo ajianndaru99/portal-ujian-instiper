@@ -64,7 +64,7 @@ function labelHuruf(index: number): string {
 }
 
 const MIN_OPSI = 2
-const MAKS_OPSI = 10
+const MAKS_OPSI = 26
 
 /**
  * Parse opsi_jawaban dengan aman. Kolom ini bertipe JSONB di database,
