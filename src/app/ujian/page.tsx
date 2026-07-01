@@ -15,26 +15,11 @@ import {
 type StatusPeringatan = 'idle' | 'peringatan1' | 'peringatan2' | 'peringatan3' | 'auto_submit'
 
 const POIN_AGREEMENT = [
-  {
-    judul: 'Kerjakan Sendiri',
-    isi: 'Ujian harus dikerjakan sendiri tanpa bantuan orang lain, joki, atau alat bantu tidak sah dalam bentuk apa pun.',
-  },
-  {
-    judul: 'Satu Tab, Satu Fokus',
-    isi: 'Dilarang membuka tab, aplikasi, atau perangkat lain untuk mencari jawaban selama ujian berlangsung.',
-  },
-  {
-    judul: 'Larangan Berbagi Soal',
-    isi: 'Soal dan jawaban tidak boleh difoto, direkam, atau disebarkan kepada mahasiswa lain dalam bentuk apa pun.',
-  },
-  {
-    judul: 'Pemantauan Otomatis',
-    isi: 'Sistem mencatat setiap perpindahan tab dan kehilangan fokus jendela secara otomatis selama ujian berlangsung.',
-  },
-  {
-    judul: 'Sanksi Akademik',
-    isi: 'Pelanggaran ketentuan ini dapat berakibat pembatalan nilai ujian hingga sanksi akademik sesuai peraturan INSTIPER Yogyakarta.',
-  },
+  'Ujian dikerjakan secara mandiri tanpa bantuan orang lain, joki, atau pihak ketiga dalam bentuk apa pun.',
+  'Dilarang membuka tab, aplikasi lain, atau perangkat tambahan selama ujian berlangsung.',
+  'Dilarang menggunakan kecerdasan buatan (AI), mesin pencari, atau catatan untuk mencari jawaban.',
+  'Dilarang memfoto, merekam, atau menyebarkan soal kepada pihak lain dalam bentuk apa pun.',
+  'Seluruh aktivitas pada perangkat ini dipantau dan terekam oleh sistem secara otomatis dan real-time selama ujian berlangsung.',
 ]
 
 export default function UjianPage() {
@@ -466,70 +451,63 @@ export default function UjianPage() {
     const { ujian, mahasiswa } = pendingDataRef.current
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col">
+        {/* Header Info Ujian */}
         <div className="bg-white border-b border-gray-100 shadow-sm px-4 py-4">
-          <p className="text-xs text-gray-400">INSTIPER Yogyakarta — FAPERTA</p>
+          <p className="text-xs text-gray-400 font-medium tracking-wide uppercase">INSTIPER Yogyakarta — FAPERTA</p>
           <p className="text-sm font-semibold text-gray-800 mt-0.5 truncate">{ujian?.judul}</p>
           <p className="text-xs text-gray-500 mt-0.5 truncate">{ujian?.mata_kuliah?.nama_matkul} • {mahasiswa?.nama}</p>
         </div>
 
-        <div className="flex-1 px-4 py-5 flex flex-col gap-4 overflow-hidden">
-          <div className="card text-center pt-6 pb-5">
-            <div className="w-14 h-14 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-3">
-              <svg className="w-7 h-7 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                <path strokeLinecap="round" strokeLinejoin="round"
-                  d="M12 9v3.75m0 3.75h.008M10.29 3.86l-8.18 14.18A1.5 1.5 0 0 0 3.4 20.5h17.2a1.5 1.5 0 0 0 1.3-2.46L13.71 3.86a1.5 1.5 0 0 0-2.42 0Z" />
-              </svg>
-            </div>
-            <h1 className="text-base font-bold text-gray-800">Pernyataan Kejujuran Akademik</h1>
-            <p className="text-xs text-gray-500 mt-1">Gulir & baca seluruh ketentuan sebelum memulai ujian</p>
+        <div className="flex-1 px-4 py-5 flex flex-col gap-4 pb-8">
+          {/* Judul */}
+          <div className="card text-center pt-5 pb-4 border-t-4 border-t-gray-800">
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Portal Ujian Online</p>
+            <h1 className="text-base font-bold text-gray-800">Pernyataan Integritas Akademik</h1>
+            <p className="text-xs text-gray-500 mt-1">Baca dan pahami seluruh ketentuan sebelum memulai ujian</p>
           </div>
 
-          <div className="card flex-1 flex flex-col p-0 overflow-hidden min-h-0">
-            <div
-              ref={agreementScrollRef}
-              onScroll={() => {
-                const el = agreementScrollRef.current
-                if (!el || sudahScrollAgreement) return
-                if (el.scrollHeight - el.scrollTop - el.clientHeight < 32) setSudahScrollAgreement(true)
-              }}
-              className="flex-1 overflow-y-auto px-5 py-4 space-y-4"
-            >
-              {POIN_AGREEMENT.map((poin, i) => (
-                <div key={poin.judul} className="flex gap-3">
-                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-600 mt-0.5">
-                    {i + 1}
-                  </span>
-                  <div>
-                    <p className="text-sm font-semibold text-gray-800">{poin.judul}</p>
-                    <p className="text-sm text-gray-500 leading-relaxed mt-0.5">{poin.isi}</p>
-                  </div>
-                </div>
-              ))}
-              {!sudahScrollAgreement && (
-                <p className="text-center text-xs text-gray-400 pt-1 animate-pulse">
-                  Gulir ke bawah untuk melanjutkan ↓
-                </p>
-              )}
-            </div>
+          {/* Poin ketentuan — bernomor, profesional */}
+          <div className="card divide-y divide-gray-100 p-0 overflow-hidden">
+            {POIN_AGREEMENT.map((teks, i) => (
+              <div key={i} className="flex items-start gap-4 px-5 py-4">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-gray-800 flex items-center justify-center text-xs font-bold text-white mt-0.5">
+                  {i + 1}
+                </span>
+                <p className="text-sm text-gray-700 leading-relaxed">{teks}</p>
+              </div>
+            ))}
           </div>
 
+          {/* Konsekuensi — tegas dan formal */}
+          <div className="bg-red-50 border border-red-300 rounded-2xl p-4 space-y-2">
+            <p className="text-xs font-bold text-red-800 uppercase tracking-widest">Konsekuensi Pelanggaran</p>
+            <p className="text-sm text-red-700 leading-relaxed">
+              Setiap perpindahan dari halaman ujian <strong>langsung tercatat oleh sistem</strong>.
+              Apabila batas pelanggaran terlampaui, ujian akan <strong>dikumpulkan secara paksa</strong> dan nilai
+              dapat <strong>dibatalkan</strong> sesuai peraturan akademik INSTIPER Yogyakarta.
+            </p>
+          </div>
+
+          {/* Checkbox & tombol */}
           <div className="card space-y-4">
-            <label className={`flex items-start gap-3 text-sm ${sudahScrollAgreement ? 'text-gray-700 cursor-pointer' : 'text-gray-400 pointer-events-none'}`}>
+            <label className="flex items-start gap-3 text-sm text-gray-700 cursor-pointer select-none">
               <input
                 type="checkbox"
-                disabled={!sudahScrollAgreement}
                 checked={checkedAgreement}
                 onChange={(e) => setCheckedAgreement(e.target.checked)}
-                className="mt-0.5 w-4 h-4 accent-primary-600 disabled:opacity-40 flex-shrink-0"
+                className="mt-0.5 w-4 h-4 accent-primary-600 flex-shrink-0"
               />
-              <span>Saya telah membaca, memahami, dan bersedia mematuhi seluruh ketentuan di atas serta menerima konsekuensinya.</span>
+              <span>
+                Saya menyatakan telah membaca, <strong>memahami</strong>, dan bersedia mematuhi
+                seluruh ketentuan di atas serta menerima segala konsekuensinya.
+              </span>
             </label>
             <button
               disabled={!checkedAgreement}
               onClick={handleSetuju}
-              className="btn-primary w-full py-3 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="btn-primary w-full py-3 disabled:opacity-40 disabled:cursor-not-allowed font-semibold tracking-wide"
             >
-              Saya Setuju, Mulai Ujian
+              Saya Setuju &mdash; Mulai Ujian
             </button>
           </div>
         </div>
