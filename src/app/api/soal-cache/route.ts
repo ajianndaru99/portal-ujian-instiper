@@ -1,72 +1,33 @@
-import { Redis } from '@upstash/redis'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-import { Ratelimit } from '@upstash/ratelimit'
-
 // ============================================================
-// Server-side Question Cache (Upstash Redis)
+// API Route: Ambil soal ujian langsung dari Supabase
+// Caching ditangani oleh Vercel Edge CDN via header Cache-Control
+// — tidak perlu Upstash Redis, tidak ada dependency pihak ketiga.
 // ============================================================
-
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL || 'https://fallback.upstash.io',
-  token: process.env.UPSTASH_REDIS_REST_TOKEN || 'fallback',
-})
-
-// Rate limit: 30 requests per minute per IP
-const ratelimit = new Ratelimit({
-  redis: redis,
-  limiter: Ratelimit.slidingWindow(30, '1 m'),
-})
-
-const CACHE_TTL_SECONDS = 300 // 5 minutes
 
 export async function GET(request: NextRequest) {
-  // Rate limiting check — wrapped in try-catch agar tidak crash jika Upstash down/quota habis
-  const ip = request.headers.get('x-forwarded-for') ?? '127.0.0.1'
-  let rateLimitOk = true
-  try {
-    const { success } = await ratelimit.limit(ip)
-    rateLimitOk = success
-  } catch (err) {
-    // Upstash error (quota habis, timeout, dll) — tetap lanjutkan, jangan crash
-    console.warn('Ratelimit check failed, bypassing:', err)
-  }
-
-  if (!rateLimitOk) {
-    return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
-  }
-
   const ujianId = request.nextUrl.searchParams.get('ujian_id')
-  if (!ujianId) return NextResponse.json({ error: 'ujian_id required' }, { status: 400 })
-
-  const cacheKey = `soal:${ujianId}`
-
-  try {
-    // 1. Cek Redis
-    const cached = await redis.get(cacheKey)
-    if (cached) {
-      return NextResponse.json({ data: cached, cached: true }, {
-        headers: { 'Cache-Control': 'public, max-age=60, s-maxage=300' }
-      })
-    }
-  } catch (err) {
-    console.error('Redis cache error:', err)
-    // Lanjut ke DB jika Redis error (fallback)
+  if (!ujianId) {
+    return NextResponse.json({ error: 'ujian_id required' }, { status: 400 })
   }
 
-  // 2. Cache miss → ambil dari Supabase
   const supabaseAdmin = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || 'http://localhost',
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'fallback'
+    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
   )
+
   const { data: soalDB, error } = await supabaseAdmin
     .from('soal')
     .select('id, ujian_id, nomor_urut, pertanyaan, tipe, opsi_jawaban, bobot_nilai')
     .eq('ujian_id', ujianId)
     .order('nomor_urut')
 
-  if (error) return NextResponse.json({ error: 'Gagal memuat soal' }, { status: 500 })
+  if (error) {
+    console.error('Gagal mengambil soal dari Supabase:', error)
+    return NextResponse.json({ error: 'Gagal memuat soal' }, { status: 500 })
+  }
 
   // Normalize opsi_jawaban
   const normalized = (soalDB || []).map((s: any) => ({
@@ -78,14 +39,11 @@ export async function GET(request: NextRequest) {
         : s.opsi_jawaban),
   }))
 
-  try {
-    // 3. Simpan ke Redis dengan TTL 5 menit
-    await redis.setex(cacheKey, CACHE_TTL_SECONDS, JSON.stringify(normalized))
-  } catch (err) {
-    console.error('Redis cache set error:', err)
-  }
-
+  // Vercel Edge CDN akan menyimpan response ini selama 5 menit (s-maxage=300)
+  // sehingga 300 mahasiswa yang memuat soal bersamaan hanya memicu 1 query ke DB.
   return NextResponse.json({ data: normalized, cached: false }, {
-    headers: { 'Cache-Control': 'public, max-age=60, s-maxage=300' }
+    headers: {
+      'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=60',
+    }
   })
 }
