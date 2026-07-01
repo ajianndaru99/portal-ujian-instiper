@@ -100,7 +100,7 @@ function KuisLangsungPanel({ ujianList, selectedUjian, setSelectedUjian }: {
       const d = includedDrafts[i]
       try {
         const opsiArr = d.type === 'pg'
-          ? d.options.map((o, idx) => `${['A','B','C','D','E','F'][idx] || idx + 1}. ${o}`)
+          ? d.options.map((o, idx) => `${String.fromCharCode(65 + idx)}. ${o}`)
           : null
 
         const { error } = await supabase.from('soal').insert({
@@ -237,7 +237,7 @@ function KuisLangsungPanel({ ujianList, selectedUjian, setSelectedUjian }: {
                     {d.type === 'pg' && d.options.length > 0 && (
                       <div className="space-y-1.5">
                         {d.options.map((opt, oi) => {
-                          const huruf = ['A','B','C','D','E','F'][oi] || String(oi + 1)
+                          const huruf = String.fromCharCode(65 + oi)
                           return (
                             <button
                               key={oi}
