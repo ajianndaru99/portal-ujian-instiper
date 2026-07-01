@@ -62,6 +62,17 @@ export default function UjianPage() {
   const [showPeringatan, setShowPeringatan] = useState(false)
   const waktuKembaliRef = useRef<number | null>(null)
 
+  // === SISTEM PERINGATAN DURASI KELUAR ===
+  // Melacak berapa lama mahasiswa di luar portal untuk peringatan psikis.
+  // Tidak menambah jumlah pelanggaran — hanya 1 pelanggaran per kejadian.
+  const waktuKeluarRef = useRef<number | null>(null)
+  const [showPeringatanDurasi, setShowPeringatanDurasi] = useState(false)
+  const [durasiDiLuar, setDurasiDiLuar] = useState(0) // dalam detik
+  const [levelPeringatanDurasi, setLevelPeringatanDurasi] = useState<'sedang' | 'keras'>('sedang')
+  // Batas waktu (detik): di atas 10s = peringatan, di atas 15s = peringatan keras
+  const DURASI_PERINGATAN = 10
+  const DURASI_PERINGATAN_KERAS = 15
+
   const [showIdlePopup, setShowIdlePopup] = useState(false)
   const idleTimerRef = useRef<NodeJS.Timeout | null>(null)
   const IDLE_TIMEOUT = 90000
@@ -353,12 +364,14 @@ export default function UjianPage() {
       }
     }
 
-    const GRACE_PERIOD_MS = 3000 // 3 detik untuk memberi waktu jika siswa membuka Control Center/Notifikasi
+    const GRACE_PERIOD_MS = 3000 // 3 detik grace period (notifikasi, Control Center, dll)
 
     let violationTimer: ReturnType<typeof setTimeout> | null = null
 
     function mulaiPelanggaran(tipe: 'pindah_tab' | 'blur_app') {
       if (violationTimer) return
+      // Catat waktu keluar untuk menghitung durasi
+      waktuKeluarRef.current = Date.now()
       violationTimer = setTimeout(() => {
         kirimPelanggaran(tipe)
         violationTimer = null
@@ -369,17 +382,40 @@ export default function UjianPage() {
       if (violationTimer) {
         clearTimeout(violationTimer)
         violationTimer = null
+        // Mahasiswa kembali dalam grace period — reset waktu keluar
+        waktuKeluarRef.current = null
       }
     }
 
-    const onVisibility = () => { 
-      if (document.visibilityState === 'hidden') mulaiPelanggaran('pindah_tab')
-      else batalPelanggaran()
+    function cekDurasiKetikakembali() {
+      if (!waktuKeluarRef.current) return
+      const durasi = Math.floor((Date.now() - waktuKeluarRef.current) / 1000)
+      waktuKeluarRef.current = null
+      // Hanya tampilkan peringatan durasi jika mahasiswa sudah terkena 1 pelanggaran
+      // (violationTimer sudah habis dan kirimPelanggaran sudah jalan)
+      if (durasi >= DURASI_PERINGATAN) {
+        setDurasiDiLuar(durasi)
+        setLevelPeringatanDurasi(durasi >= DURASI_PERINGATAN_KERAS ? 'keras' : 'sedang')
+        // Tunda sedikit agar popup pelanggaran utama muncul dulu
+        setTimeout(() => setShowPeringatanDurasi(true), 800)
+      }
     }
-    const onBlur = () => { 
-      if (document.visibilityState === 'visible') mulaiPelanggaran('blur_app') 
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        mulaiPelanggaran('pindah_tab')
+      } else {
+        batalPelanggaran()
+        cekDurasiKetikakembali()
+      }
     }
-    const onFocus = () => { batalPelanggaran() }
+    const onBlur = () => {
+      if (document.visibilityState === 'visible') mulaiPelanggaran('blur_app')
+    }
+    const onFocus = () => {
+      batalPelanggaran()
+      cekDurasiKetikakembali()
+    }
 
     document.addEventListener('visibilitychange', onVisibility)
     window.addEventListener('blur', onBlur)
@@ -620,7 +656,68 @@ export default function UjianPage() {
         </div>
       </div>
 
-      {}
+      {/* === POPUP PERINGATAN DURASI DI LUAR === */}
+      {showPeringatanDurasi && !showPeringatan && (
+        <div className="overlay animate-fade-in" style={{ zIndex: 60 }}>
+          <div className={`bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl border-t-4 ${
+            levelPeringatanDurasi === 'keras' ? 'border-t-red-600' : 'border-t-orange-500'
+          }`}>
+            <div className="text-center mb-4">
+              <div className="text-5xl mb-2">
+                {levelPeringatanDurasi === 'keras' ? '🔴' : '⚠️'}
+              </div>
+              <h3 className={`font-bold text-lg ${
+                levelPeringatanDurasi === 'keras' ? 'text-red-700' : 'text-orange-700'
+              }`}>
+                {levelPeringatanDurasi === 'keras'
+                  ? 'PERINGATAN KERAS!'
+                  : 'Kamu Terlalu Lama Di Luar!'}
+              </h3>
+            </div>
+
+            <div className={`rounded-xl p-4 mb-4 text-center ${
+              levelPeringatanDurasi === 'keras' ? 'bg-red-50' : 'bg-orange-50'
+            }`}>
+              <p className={`text-3xl font-black mb-1 ${
+                levelPeringatanDurasi === 'keras' ? 'text-red-700' : 'text-orange-600'
+              }`}>
+                {durasiDiLuar} detik
+              </p>
+              <p className={`text-xs font-medium ${
+                levelPeringatanDurasi === 'keras' ? 'text-red-600' : 'text-orange-500'
+              }`}>
+                Kamu berada di luar portal ujian
+              </p>
+            </div>
+
+            <p className="text-gray-700 text-sm leading-relaxed mb-3 text-center">
+              {levelPeringatanDurasi === 'keras'
+                ? 'Aktivitas ini sangat mencurigakan dan telah dicatat oleh sistem. Jika kamu meninggalkan halaman ujian sekali lagi, ujian akan LANGSUNG DIKUMPULKAN secara otomatis oleh sistem.'
+                : 'Sistem mendeteksi kamu berada di luar halaman ujian terlalu lama. Aktivitas ini telah dicatat dan dilaporkan kepada pengawas ujian.'}
+            </p>
+
+            {levelPeringatanDurasi === 'keras' && (
+              <div className="bg-red-100 border border-red-300 rounded-xl p-3 mb-4">
+                <p className="text-red-800 text-xs font-bold text-center">
+                  🚫 Peringatan ini merupakan YANG TERAKHIR sebelum ujian dikumpulkan paksa.
+                </p>
+              </div>
+            )}
+
+            <button
+              id="btn-tutup-peringatan-durasi"
+              onClick={() => setShowPeringatanDurasi(false)}
+              className={`w-full py-3 rounded-xl font-semibold text-white transition-all ${
+                levelPeringatanDurasi === 'keras'
+                  ? 'bg-red-600 hover:bg-red-700 active:bg-red-800'
+                  : 'bg-orange-500 hover:bg-orange-600 active:bg-orange-700'
+              }`}
+            >
+              Saya Mengerti, Kembali Ujian
+            </button>
+          </div>
+        </div>
+      )}
       {showIdlePopup && (
         <div className="overlay animate-fade-in">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm text-center shadow-2xl">
