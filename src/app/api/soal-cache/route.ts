@@ -24,7 +24,13 @@ const CACHE_TTL_SECONDS = 300 // 5 minutes
 export async function GET(request: NextRequest) {
   // Rate limiting check
   const ip = request.headers.get('x-forwarded-for') ?? '127.0.0.1'
-  const { success } = await ratelimit.limit(ip)
+  let success = true
+  try {
+    const result = await ratelimit.limit(ip)
+    success = result.success
+  } catch (err) {
+    console.warn('Ratelimit error (fallback to allow):', err)
+  }
   
   if (!success) {
     return NextResponse.json({ error: 'Too many requests' }, { status: 429 })

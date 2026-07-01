@@ -37,6 +37,42 @@ const POIN_AGREEMENT = [
   },
 ]
 
+const GhostText = ({ text }: { text?: string }) => {
+  if (!text) return null;
+  const words = text.split(/\s+/);
+  const result = [];
+  const garbageStrings = ['xyz', 'qwe', '123', 'abc', 'vbn', 'zxc', '789', 'fgh'];
+  
+  for (let i = 0; i < words.length; i++) {
+    result.push(<span key={`w-${i}`}>{words[i]}</span>);
+    if (i < words.length - 1) {
+      // Deterministic insertion to prevent hydration errors
+      if (i % 2 === 0 || i % 3 === 0) {
+        const g = garbageStrings[(i + text.length) % garbageStrings.length];
+        result.push(
+          <span 
+            key={`g-${i}`} 
+            style={{ 
+              color: '#000', 
+              opacity: 0.02,
+              fontSize: '11px', 
+              letterSpacing: '-1.5px', 
+              userSelect: 'none',
+              display: 'inline-block',
+              transform: 'scaleX(0.8)'
+            }}
+            aria-hidden="true"
+          >
+            {g}
+          </span>
+        );
+      }
+      result.push(' ');
+    }
+  }
+  return <>{result}</>;
+}
+
 export default function UjianPage() {
   const router = useRouter()
 
@@ -573,7 +609,7 @@ export default function UjianPage() {
             </span>
           </div>
           <div className="text-gray-800 text-base leading-relaxed mb-5 font-medium" style={{ pointerEvents: 'none' }}>
-            {soalAktif.pertanyaan}
+            <GhostText text={soalAktif.pertanyaan} />
           </div>
           {soalAktif.tipe === 'pg' && soalAktif.opsi_jawaban && (
             <div className="space-y-3">
@@ -585,7 +621,7 @@ export default function UjianPage() {
                     className={`w-full text-left px-4 py-3.5 rounded-xl border-2 transition-all duration-150 flex items-start gap-3 touch-manipulation ${dipilih ? 'border-primary-500 bg-primary-50' : 'border-gray-100 bg-gray-50 active:bg-gray-100'}`}>
                     <span className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 mt-0.5 ${dipilih ? 'bg-primary-500 text-white' : 'bg-white border border-gray-200 text-gray-500'}`}>{huruf}</span>
                     <span className={`text-sm leading-relaxed ${dipilih ? 'text-primary-800 font-medium' : 'text-gray-700'}`} style={{ pointerEvents: 'none' }}>
-                      {opsi.substring(2).trim()}
+                      <GhostText text={opsi.substring(2).trim()} />
                     </span>
                   </button>
                 )
