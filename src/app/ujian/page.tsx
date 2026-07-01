@@ -38,106 +38,48 @@ const POIN_AGREEMENT = [
 ]
 
 // ============================================================
-// ANTI-OCR SYSTEM — Mencegah AI membaca soal dari screenshot
-// Teknik: (1) Vertical jitter per karakter (2) Invisible homoglyph
-// (3) CSS grid overlay pada container soal
-// Tidak mempengaruhi tampilan visual mahasiswa sama sekali.
+// ANTI-OCR SYSTEM (Versi Ringan & Rapi)
+// Teknik: (1) Homoglyph substitution di level string — ZERO DOM overhead
+//         (2) CSS grid overlay hanya pada blok soal
+// Tidak ada per-karakter span → tampilan tetap rapi, tidak ada lag.
 // ============================================================
 
-// Peta homoglyph: huruf Latin → karakter Unicode serupa yang berbeda
-// Secara visual identik, tetapi AI/OCR membacanya sebagai karakter asing
+// Huruf Latin yang diganti karakter Cyrillic secara visual identik
+// AI/OCR membaca campuran bahasa → hasil scan berantakan
 const HOMOGLYPH_MAP: Record<string, string> = {
-  'a': '\u0430', // Cyrillic а
-  'e': '\u0435', // Cyrillic е
-  'o': '\u043E', // Cyrillic о
-  'p': '\u0440', // Cyrillic р
-  'c': '\u0441', // Cyrillic с
-  'x': '\u0445', // Cyrillic х
-  'i': '\u0456', // Cyrillic і
-  'A': '\u0410', // Cyrillic А
-  'E': '\u0415', // Cyrillic Е
-  'O': '\u041E', // Cyrillic О
-  'P': '\u0420', // Cyrillic Р
-  'C': '\u0421', // Cyrillic С
-  'K': '\u041A', // Cyrillic К
-  'M': '\u041C', // Cyrillic М
-  'T': '\u0422', // Cyrillic Т
-  'B': '\u0412', // Cyrillic В
-  'H': '\u041D', // Cyrillic Н
+  'a': '\u0430', 'e': '\u0435', 'o': '\u043E',
+  'p': '\u0440', 'c': '\u0441', 'i': '\u0456',
+  'A': '\u0410', 'E': '\u0415', 'O': '\u041E',
+  'P': '\u0420', 'C': '\u0421', 'M': '\u041C',
+  'T': '\u0422', 'B': '\u0412', 'H': '\u041D',
 };
 
-// Karakter zero-width yang tidak kasat mata, untuk disisipi di antara huruf
-// Membuat OCR teks mentah gagal total
-const ZW_CHARS = ['\u200B', '\u200C', '\u200D', '\uFEFF'];
-
-const antiOcrChar = (char: string, idx: number, seed: number): string => {
-  // ~35% karakter diganti homoglyph secara deterministik (tanpa Random())
-  const shouldSwap = (idx * 7 + seed * 3) % 10 < 3;
-  if (shouldSwap && HOMOGLYPH_MAP[char]) return HOMOGLYPH_MAP[char];
-  return char;
+// Proses teks: ganti ~30% huruf dengan homoglyph secara deterministik
+// Tidak ada Math.random() → tidak ada hydration mismatch
+const applyHomoglyph = (text: string): string => {
+  const seed = text.length + (text.charCodeAt(0) || 0);
+  return text.split('').map((char, idx) => {
+    const swap = (idx * 7 + seed * 3) % 10 < 3;
+    return (swap && HOMOGLYPH_MAP[char]) ? HOMOGLYPH_MAP[char] : char;
+  }).join('');
 };
 
-const JitterChar = ({ char, idx, seed }: { char: string; idx: number; seed: number }) => {
-  // Jitter vertikal deterministik: ±2px per karakter
-  // Mata manusia tidak sadar, OCR gagal mengenali garis teks
-  const jitterValues = [-2, -1, 0, 1, 2, 1, 0, -1];
-  const jitter = jitterValues[(idx * 3 + seed) % jitterValues.length];
-  const processedChar = antiOcrChar(char, idx, seed);
-  
-  return (
-    <span
-      style={{
-        display: 'inline-block',
-        position: 'relative',
-        top: `${jitter}px`,
-        userSelect: 'none',
-      }}
-    >
-      {processedChar}
-    </span>
-  );
-};
-
+// Komponen teks anti-OCR — hanya merender 1 elemen <span>, ringan seperti teks biasa
 const AntiOcrText = ({ text }: { text?: string }) => {
   if (!text) return null;
-  // Seed deterministik dari konten teks (bukan Math.random)
-  const seed = text.length + (text.charCodeAt(0) || 0) + (text.charCodeAt(text.length - 1) || 0);
-  const chars = text.split('');
-  return (
-    <span style={{ display: 'inline' }}>
-      {chars.map((char, idx) =>
-        char === ' ' ? (
-          // Sisipkan zero-width chars di antara spasi (tidak terlihat, merusak OCR teks)
-          <span key={idx}>
-            {' '}
-            <span aria-hidden="true" style={{ fontSize: 0, lineHeight: 0 }}>
-              {ZW_CHARS[idx % ZW_CHARS.length]}
-            </span>
-          </span>
-        ) : (
-          <JitterChar key={idx} char={char} idx={idx} seed={seed} />
-        )
-      )}
-    </span>
-  );
+  return <span>{applyHomoglyph(text)}</span>;
 };
 
-// CSS Grid Overlay — komponen pembungkus dengan garis tersembunyi
-// Garis ini memotong huruf saat screenshot, merusak shape recognition AI
-const AntiOcrWrapper = ({ children, className, style }: {
+// Wrapper KHUSUS untuk blok soal (div, bukan button)
+// Menambahkan grid overlay CSS yang memotong huruf di screenshot
+const AntiOcrBlock = ({ children, className, style }: {
   children: React.ReactNode;
   className?: string;
   style?: React.CSSProperties;
 }) => (
-  <div
-    className={className}
-    style={{
-      ...style,
-      position: 'relative',
-    }}
-  >
+  <div className={className} style={{ ...style, position: 'relative' }}>
     {children}
-    {/* Grid overlay: sangat tipis, tidak terlihat manusia, merusak OCR */}
+    {/* Overlay tipis: tidak terlihat manusia, merusak shape recognition AI di screenshot */}
     <div
       aria-hidden="true"
       style={{
@@ -145,13 +87,10 @@ const AntiOcrWrapper = ({ children, className, style }: {
         inset: 0,
         pointerEvents: 'none',
         backgroundImage: [
-          // Garis horizontal tipis setiap 6px
-          'repeating-linear-gradient(0deg, transparent, transparent 5px, rgba(0,0,0,0.06) 5px, rgba(0,0,0,0.06) 5.5px)',
-          // Garis vertikal tipis setiap 8px
-          'repeating-linear-gradient(90deg, transparent, transparent 7px, rgba(0,0,0,0.04) 7px, rgba(0,0,0,0.04) 7.5px)',
+          'repeating-linear-gradient(0deg, transparent, transparent 5px, rgba(0,0,0,0.055) 5px, rgba(0,0,0,0.055) 5.4px)',
+          'repeating-linear-gradient(90deg, transparent, transparent 9px, rgba(0,0,0,0.035) 9px, rgba(0,0,0,0.035) 9.4px)',
         ].join(', '),
         zIndex: 1,
-        userSelect: 'none',
         borderRadius: 'inherit',
       }}
     />
@@ -693,9 +632,9 @@ export default function UjianPage() {
               {soalAktif.tipe === 'pg' ? 'Pilihan Ganda' : 'Esai'}
             </span>
           </div>
-          <AntiOcrWrapper className="text-gray-800 text-base leading-relaxed mb-5 font-medium" style={{ pointerEvents: 'none' }}>
+          <AntiOcrBlock className="text-gray-800 text-base leading-relaxed mb-5 font-medium" style={{ pointerEvents: 'none' }}>
             <AntiOcrText text={soalAktif.pertanyaan} />
-          </AntiOcrWrapper>
+          </AntiOcrBlock>
           {soalAktif.tipe === 'pg' && soalAktif.opsi_jawaban && (
             <div className="space-y-3">
               {soalAktif.opsi_jawaban.map((opsi, idx) => {
@@ -705,9 +644,9 @@ export default function UjianPage() {
                   <button key={idx} onClick={() => handleJawab(soalAktif.id, huruf)}
                     className={`w-full text-left px-4 py-3.5 rounded-xl border-2 transition-all duration-150 flex items-start gap-3 touch-manipulation ${dipilih ? 'border-primary-500 bg-primary-50' : 'border-gray-100 bg-gray-50 active:bg-gray-100'}`}>
                     <span className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 mt-0.5 ${dipilih ? 'bg-primary-500 text-white' : 'bg-white border border-gray-200 text-gray-500'}`}>{huruf}</span>
-                    <AntiOcrWrapper className={`text-sm leading-relaxed ${dipilih ? 'text-primary-800 font-medium' : 'text-gray-700'}`} style={{ pointerEvents: 'none' }}>
+                    <span className={`text-sm leading-relaxed ${dipilih ? 'text-primary-800 font-medium' : 'text-gray-700'}`} style={{ pointerEvents: 'none' }}>
                       <AntiOcrText text={opsi.substring(2).trim()} />
-                    </AntiOcrWrapper>
+                    </span>
                   </button>
                 )
               })}
