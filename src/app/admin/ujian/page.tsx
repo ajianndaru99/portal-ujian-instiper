@@ -138,6 +138,20 @@ export default function AdminUjianPage() {
 
   async function hapusUjian(id: string, judul: string) {
     if (!confirm(`Hapus ujian "${judul}"? Semua soal dan sesi akan ikut terhapus.`)) return
+    
+    // Hapus data terkait sesi ujian (jawaban & log)
+    const { data: sesiList } = await supabase.from('sesi_ujian').select('id').eq('ujian_id', id)
+    const sesiIds = (sesiList || []).map(s => s.id)
+    if (sesiIds.length > 0) {
+      await supabase.from('jawaban').delete().in('sesi_id', sesiIds)
+      await supabase.from('log_aktivitas').delete().in('sesi_id', sesiIds)
+    }
+    
+    // Hapus sesi_ujian dan soal
+    await supabase.from('sesi_ujian').delete().eq('ujian_id', id)
+    await supabase.from('soal').delete().eq('ujian_id', id)
+    
+    // Hapus ujian utama
     await supabase.from('ujian').delete().eq('id', id)
     loadUjian()
   }
