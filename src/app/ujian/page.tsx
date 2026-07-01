@@ -37,66 +37,6 @@ const POIN_AGREEMENT = [
   },
 ]
 
-// ============================================================
-// ANTI-OCR SYSTEM (Versi Ringan & Rapi)
-// Teknik: (1) Homoglyph substitution di level string — ZERO DOM overhead
-//         (2) CSS grid overlay hanya pada blok soal
-// Tidak ada per-karakter span → tampilan tetap rapi, tidak ada lag.
-// ============================================================
-
-// Huruf Latin yang diganti karakter Cyrillic secara visual identik
-// AI/OCR membaca campuran bahasa → hasil scan berantakan
-const HOMOGLYPH_MAP: Record<string, string> = {
-  'a': '\u0430', 'e': '\u0435', 'o': '\u043E',
-  'p': '\u0440', 'c': '\u0441', 'i': '\u0456',
-  'A': '\u0410', 'E': '\u0415', 'O': '\u041E',
-  'P': '\u0420', 'C': '\u0421', 'M': '\u041C',
-  'T': '\u0422', 'B': '\u0412', 'H': '\u041D',
-};
-
-// Proses teks: ganti ~30% huruf dengan homoglyph secara deterministik
-// Tidak ada Math.random() → tidak ada hydration mismatch
-const applyHomoglyph = (text: string): string => {
-  const seed = text.length + (text.charCodeAt(0) || 0);
-  return text.split('').map((char, idx) => {
-    const swap = (idx * 7 + seed * 3) % 10 < 3;
-    return (swap && HOMOGLYPH_MAP[char]) ? HOMOGLYPH_MAP[char] : char;
-  }).join('');
-};
-
-// Komponen teks anti-OCR — hanya merender 1 elemen <span>, ringan seperti teks biasa
-const AntiOcrText = ({ text }: { text?: string }) => {
-  if (!text) return null;
-  return <span>{applyHomoglyph(text)}</span>;
-};
-
-// Wrapper KHUSUS untuk blok soal (div, bukan button)
-// Menambahkan grid overlay CSS yang memotong huruf di screenshot
-const AntiOcrBlock = ({ children, className, style }: {
-  children: React.ReactNode;
-  className?: string;
-  style?: React.CSSProperties;
-}) => (
-  <div className={className} style={{ ...style, position: 'relative' }}>
-    {children}
-    {/* Overlay tipis: tidak terlihat manusia, merusak shape recognition AI di screenshot */}
-    <div
-      aria-hidden="true"
-      style={{
-        position: 'absolute',
-        inset: 0,
-        pointerEvents: 'none',
-        backgroundImage: [
-          'repeating-linear-gradient(0deg, transparent, transparent 5px, rgba(0,0,0,0.055) 5px, rgba(0,0,0,0.055) 5.4px)',
-          'repeating-linear-gradient(90deg, transparent, transparent 9px, rgba(0,0,0,0.035) 9px, rgba(0,0,0,0.035) 9.4px)',
-        ].join(', '),
-        zIndex: 1,
-        borderRadius: 'inherit',
-      }}
-    />
-  </div>
-);
-
 export default function UjianPage() {
   const router = useRouter()
 
@@ -632,9 +572,9 @@ export default function UjianPage() {
               {soalAktif.tipe === 'pg' ? 'Pilihan Ganda' : 'Esai'}
             </span>
           </div>
-          <AntiOcrBlock className="text-gray-800 text-base leading-relaxed mb-5 font-medium" style={{ pointerEvents: 'none' }}>
-            <AntiOcrText text={soalAktif.pertanyaan} />
-          </AntiOcrBlock>
+          <div className="text-gray-800 text-base leading-relaxed mb-5 font-medium" style={{ pointerEvents: 'none' }}>
+            {soalAktif.pertanyaan}
+          </div>
           {soalAktif.tipe === 'pg' && soalAktif.opsi_jawaban && (
             <div className="space-y-3">
               {soalAktif.opsi_jawaban.map((opsi, idx) => {
@@ -645,7 +585,7 @@ export default function UjianPage() {
                     className={`w-full text-left px-4 py-3.5 rounded-xl border-2 transition-all duration-150 flex items-start gap-3 touch-manipulation ${dipilih ? 'border-primary-500 bg-primary-50' : 'border-gray-100 bg-gray-50 active:bg-gray-100'}`}>
                     <span className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 mt-0.5 ${dipilih ? 'bg-primary-500 text-white' : 'bg-white border border-gray-200 text-gray-500'}`}>{huruf}</span>
                     <span className={`text-sm leading-relaxed ${dipilih ? 'text-primary-800 font-medium' : 'text-gray-700'}`} style={{ pointerEvents: 'none' }}>
-                      <AntiOcrText text={opsi.substring(2).trim()} />
+                      {opsi.substring(2).trim()}
                     </span>
                   </button>
                 )
